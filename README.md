@@ -41,6 +41,7 @@ vim config.yaml
 关键配置块：
 
 - `monitor.interval_seconds`: 采样周期
+- `monitor.instance_name`: 当前监控实例名称，会显示在通知标题和正文中
 - `monitor.command_timeout_seconds`: `nvidia-smi` 超时秒数
 - `threshold.low_usage_mode`: `any` / `all` / `majority` / `selected_primary`
 - `threshold.armed_stable_minutes`: 首次识别 compute 进程后的稳定窗口
@@ -138,6 +139,7 @@ journalctl -u gpu-monitor-dashboard -f
 旧版配置迁移要点：
 
 - `notify.control.enabled` 仍保留
+- 建议新增 `monitor.instance_name` 区分多台机器共用同一 webhook 的消息来源
 - 新增 `dashboard` / `logging` / `metrics` 配置块
 - 旧版默认公网监听已改为默认本地监听
 - Dashboard 现默认启用 Bearer Token 鉴权
@@ -149,4 +151,3 @@ journalctl -u gpu-monitor-dashboard -f
 - `dashboard.auth.token is required`: 在 `config.yaml` 或环境变量中设置 Token
 - 无法收到告警：检查 `notify.strategy.order`、各渠道配置和服务器出网
 - 日志过多：可调高 `logging.level` 或拉长采样周期
-

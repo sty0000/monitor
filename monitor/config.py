@@ -46,6 +46,7 @@ def _redact_secret(value: str) -> str:
 
 @dataclass(frozen=True)
 class MonitorConfig:
+    instance_name: str = "gpu-monitor"
     interval_seconds: int = 15
     command_timeout_seconds: int = 8
     gpu_ids: list[int] = field(default_factory=list)
@@ -184,6 +185,7 @@ class AppConfig:
     def redacted_summary(self) -> dict[str, Any]:
         return {
             "monitor": {
+                "instance_name": self.monitor.instance_name,
                 "interval_seconds": self.monitor.interval_seconds,
                 "command_timeout_seconds": self.monitor.command_timeout_seconds,
                 "gpu_ids": self.monitor.gpu_ids,
@@ -312,6 +314,7 @@ def load_config(path: Path) -> AppConfig:
 
     config = AppConfig(
         monitor=MonitorConfig(
+            instance_name=str(monitor.get("instance_name", "gpu-monitor")),
             interval_seconds=int(monitor.get("interval_seconds", 15)),
             command_timeout_seconds=int(monitor.get("command_timeout_seconds", 8)),
             gpu_ids=_parse_int_list(monitor.get("gpu_ids", [])),
@@ -394,4 +397,3 @@ def load_config(path: Path) -> AppConfig:
         ),
     )
     return _validate(config)
-

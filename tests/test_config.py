@@ -8,6 +8,7 @@ def test_load_config_reads_new_schema(tmp_path: Path) -> None:
     config_path.write_text(
         """
 monitor:
+  instance_name: "server-a"
   interval_seconds: 20
   command_timeout_seconds: 7
 dashboard:
@@ -18,6 +19,7 @@ dashboard:
         encoding="utf-8",
     )
     config = load_config(config_path)
+    assert config.monitor.instance_name == "server-a"
     assert config.monitor.interval_seconds == 20
     assert config.monitor.command_timeout_seconds == 7
     assert config.dashboard.auth.token == "secret-token"
@@ -31,4 +33,3 @@ def test_load_config_requires_token_when_auth_enabled(tmp_path: Path) -> None:
         assert False, "expected ConfigError"
     except ConfigError:
         pass
-

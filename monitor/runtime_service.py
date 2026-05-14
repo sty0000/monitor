@@ -236,8 +236,13 @@ class MonitorRuntimeService:
                 return
 
             if command.action == "send_test_notification":
-                subject = "[GPU Monitor] TEST"
-                body = f"time(utc): {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\nmessage: test notification from runtime"
+                instance_name = self.config.monitor.instance_name
+                subject = f"[GPU Monitor][{instance_name}] TEST"
+                body = (
+                    f"monitor: {instance_name}\n"
+                    f"time(utc): {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n"
+                    "message: test notification from runtime"
+                )
                 if not self.notify_enabled:
                     self._append_event("notify_skip", "notify disabled by master switch", {"subject": subject})
                     command.response.put(False)
@@ -268,7 +273,7 @@ class MonitorRuntimeService:
         if not should_send_by_global_interval(self.state, min_interval_seconds, now):
             self.state.active_alert = evaluation.alert_key
             return
-        subject, body = build_alert_message(evaluation.alert_key, sample, evaluation.reason)
+        subject, body = build_alert_message(self.config.monitor.instance_name, evaluation.alert_key, sample, evaluation.reason)
         result = self.notification_service.send(subject, body)
         mark_alert_sent(self.state, evaluation.alert_key, now)
         self.metrics.alert_total.labels(alert_key=evaluation.alert_key).inc()
@@ -293,7 +298,7 @@ class MonitorRuntimeService:
         if not should_send_by_global_interval(self.state, min_interval_seconds, now):
             self.state.active_alert = None
             return
-        subject, body = build_recovered_message(previous_alert, sample)
+        subject, body = build_recovered_message(self.config.monitor.instance_name, previous_alert, sample)
         result = self.notification_service.send(subject, body)
         mark_alert_sent(self.state, recovery_key, now)
         self.metrics.notify_total.labels(notifier=result.notifier, outcome="success").inc()

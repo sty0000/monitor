@@ -145,9 +145,9 @@ def evaluate_state(config: AppConfig, state: MonitorState, sample: dict[str, Any
     return EvaluationResult("ACTIVE", None, "healthy")
 
 
-def build_alert_message(alert_key: str, sample: dict[str, Any], reason: str) -> tuple[str, str]:
-    title = f"[GPU Monitor] {alert_key}"
-    lines = [f"time(utc): {sample['timestamp']}", f"alert: {alert_key}", f"reason: {reason}", "", "gpu snapshot:"]
+def build_alert_message(instance_name: str, alert_key: str, sample: dict[str, Any], reason: str) -> tuple[str, str]:
+    title = f"[GPU Monitor][{instance_name}] {alert_key}"
+    lines = [f"monitor: {instance_name}", f"time(utc): {sample['timestamp']}", f"alert: {alert_key}", f"reason: {reason}", "", "gpu snapshot:"]
     for gpu in sample.get("gpus", []):
         lines.append(
             f"- gpu{gpu['index']}: util={gpu['utilization_gpu']}%, mem={gpu['memory_used_mb']}MB, power={gpu['power_draw_w']}W, temp={gpu['temperature_c']}C, pids={gpu['compute_pids']}"
@@ -155,9 +155,10 @@ def build_alert_message(alert_key: str, sample: dict[str, Any], reason: str) -> 
     return title, "\n".join(lines)
 
 
-def build_recovered_message(previous_alert: str, sample: dict[str, Any]) -> tuple[str, str]:
-    title = "[GPU Monitor] RECOVERED"
+def build_recovered_message(instance_name: str, previous_alert: str, sample: dict[str, Any]) -> tuple[str, str]:
+    title = f"[GPU Monitor][{instance_name}] RECOVERED"
     lines = [
+        f"monitor: {instance_name}",
         f"time(utc): {sample['timestamp']}",
         f"recovered_from: {previous_alert}",
         "status: active and healthy",
@@ -169,4 +170,3 @@ def build_recovered_message(previous_alert: str, sample: dict[str, Any]) -> tupl
             f"- gpu{gpu['index']}: util={gpu['utilization_gpu']}%, mem={gpu['memory_used_mb']}MB, power={gpu['power_draw_w']}W, temp={gpu['temperature_c']}C, pids={gpu['compute_pids']}"
         )
     return title, "\n".join(lines)
-
