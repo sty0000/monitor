@@ -101,9 +101,9 @@ function api(url, method, body) {
 
 function fmtEvents(events) {
   return events.map(function (event) {
-    var extra = event.extra ? '\n' + JSON.stringify(event.extra, null, 2) : '';
+    var extra = event.extra ? '\\n' + JSON.stringify(event.extra, null, 2) : '';
     return '[' + event.ts + '] ' + event.kind + ': ' + event.message + extra;
-  }).join('\n\n');
+  }).join('\\n\\n');
 }
 
 function render(status, health) {
