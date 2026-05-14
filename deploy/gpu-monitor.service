@@ -1,0 +1,17 @@
+﻿[Unit]
+Description=GPU Training Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/monitor
+EnvironmentFile=/etc/default/gpu-monitor
+ExecStart=/opt/monitor/.venv/bin/python -m monitor.agent --config /opt/monitor/config.yaml
+Restart=always
+RestartSec=10
+User=ubuntu
+Group=ubuntu
+
+[Install]
+WantedBy=multi-user.target

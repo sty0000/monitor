@@ -1,0 +1,81 @@
+monitor:
+  interval_seconds: 15
+  command_timeout_seconds: 8
+  gpu_ids: []
+
+threshold:
+  usage_percent: 20
+  idle_minutes: 10
+  no_process_minutes: 5
+  warmup_minutes: 3
+  armed_stable_minutes: 1
+  low_usage_mode: "any"
+  primary_gpu_id: null
+
+alert:
+  cooldown_minutes: 30
+  min_interval_minutes: 3
+  recovery:
+    enabled: true
+    cooldown_minutes: 5
+    severe_only: false
+
+dashboard:
+  host: "127.0.0.1"
+  port: 8090
+  auth:
+    enabled: true
+    token: "CHANGE_ME_BEARER_TOKEN"
+    require_auth_for_read: false
+
+logging:
+  level: "INFO"
+  structured: true
+  event_log_path: "logs/events.jsonl"
+
+metrics:
+  enabled: true
+
+notify:
+  control:
+    enabled: true
+
+  strategy:
+    mode: "failover"
+    order: ["wecom", "feishu", "dingtalk", "telegram", "webhook", "smtp"]
+    fail_on_business_error: false
+
+  smtp:
+    enabled: false
+    host: "smtp.example.com"
+    port: 465
+    user: "you@example.com"
+    password: "REPLACE_WITH_APP_PASSWORD"
+    from: "you@example.com"
+    to:
+      - "you@example.com"
+    use_tls: false
+
+  webhook:
+    enabled: false
+    url: "https://example.com/webhook"
+
+  wecom:
+    enabled: true
+    webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=REPLACE_ME"
+
+  feishu:
+    enabled: false
+    webhook_url: "https://open.feishu.cn/open-apis/bot/v2/hook/REPLACE_ME"
+
+  dingtalk:
+    enabled: false
+    webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_ME"
+    secret: ""
+
+  telegram:
+    enabled: false
+    bot_token: "123456:ABCDEF_REPLACE_ME"
+    chat_id: "-1001234567890"
+    api_base: "https://api.telegram.org"
+

@@ -1,0 +1,9 @@
+config.yaml
+logs/
+__pycache__/
+monitor/__pycache__/
+monitor/notifiers/__pycache__/
+tests/__pycache__/
+.pytest_cache/
+
+docs/optimization-roadmap.md

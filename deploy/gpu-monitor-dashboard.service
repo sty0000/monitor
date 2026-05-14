@@ -1,0 +1,24 @@
+[Unit]
+Description=GPU Monitor Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/monitor
+EnvironmentFile=/etc/default/gpu-monitor
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/monitor/.venv/bin/python -m monitor.dashboard --config /opt/monitor/config.yaml
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+User=ubuntu
+Group=ubuntu
+
+[Install]
+WantedBy=multi-user.target
+
