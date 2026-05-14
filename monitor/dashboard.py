@@ -67,72 +67,80 @@ def _html_page() -> str:
 <div class="card" style="margin-top: 16px;"><h3>Recent Events</h3><pre id="events">-</pre></div>
 
 <script>
-let bearerToken = '';
+var bearerToken = '';
 
-function headers() {
-  const value = bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {};
-  return { 'Content-Type': 'application/json', ...value };
+function buildHeaders() {
+  var headers = { 'Content-Type': 'application/json' };
+  if (bearerToken) {
+    headers.Authorization = 'Bearer ' + bearerToken;
+  }
+  return headers;
 }
 
-async function api(url, method = 'GET', body = null) {
-  const resp = await fetch(url, {
-    method,
-    headers: headers(),
+function api(url, method, body) {
+  if (!method) {
+    method = 'GET';
+  }
+  return fetch(url, {
+    method: method,
+    headers: buildHeaders(),
     body: body ? JSON.stringify(body) : null,
+  }).then(function (resp) {
+    if (!resp.ok) {
+      return resp.text().catch(function () { return ''; }).then(function (text) {
+        throw new Error('HTTP ' + resp.status + ': ' + text);
+      });
+    }
+    var type = resp.headers.get('content-type') || '';
+    if (type.indexOf('application/json') >= 0) {
+      return resp.json();
+    }
+    return resp.text();
   });
-  if (!resp.ok) {
-    let text = '';
-    try { text = await resp.text(); } catch (_) {}
-    throw new Error(`HTTP ${resp.status}: ${text}`);
-  }
-  const type = resp.headers.get('content-type') || '';
-  if (type.includes('application/json')) {
-    return await resp.json();
-  }
-  return await resp.text();
 }
 
 function fmtEvents(events) {
-  return events.map((event) => {
-    const extra = event.extra ? `\n${JSON.stringify(event.extra, null, 2)}` : '';
-    return `[${event.ts}] ${event.kind}: ${event.message}${extra}`;
+  return events.map(function (event) {
+    var extra = event.extra ? '\n' + JSON.stringify(event.extra, null, 2) : '';
+    return '[' + event.ts + '] ' + event.kind + ': ' + event.message + extra;
   }).join('\n\n');
 }
 
 function render(status, health) {
-  const state = status.monitor_state || '-';
-  const cls = state === 'ACTIVE' ? 'ok' : (state.includes('ALERT') || state === 'ERROR') ? 'bad' : 'warn';
-  document.getElementById('monitorState').innerHTML = `<span class="${cls}">${state}</span><div>${status.reason || ''}</div>`;
+  var state = status.monitor_state || '-';
+  var cls = state === 'ACTIVE' ? 'ok' : ((state.indexOf('ALERT') >= 0 || state === 'ERROR') ? 'bad' : 'warn');
+  document.getElementById('monitorState').innerHTML = '<span class="' + cls + '">' + state + '</span><div>' + (status.reason || '') + '</div>';
   document.getElementById('notifyState').innerHTML = status.notify_enabled ? '<span class="ok">ON</span>' : '<span class="warn">OFF</span>';
-  document.getElementById('intervalState').textContent = `${status.interval_seconds}s / cooldown ${status.cooldown_minutes}m / global ${status.min_interval_minutes}m`;
+  document.getElementById('intervalState').textContent = status.interval_seconds + 's / cooldown ' + status.cooldown_minutes + 'm / global ' + status.min_interval_minutes + 'm';
   document.getElementById('routeState').textContent = (status.notifier_order_active || []).join(' -> ') || '(none)';
 
-  const gpus = (status.sample && status.sample.gpus) || [];
-  const rows = gpus.map((gpu) => (
-    `<tr><td>${gpu.index}</td><td>${gpu.utilization_gpu}</td><td>${gpu.memory_used_mb}</td><td>${gpu.power_draw_w}</td><td>${gpu.temperature_c}</td><td>${(gpu.compute_pids || []).join(',')}</td></tr>`
-  )).join('');
+  var gpus = (status.sample && status.sample.gpus) || [];
+  var rows = gpus.map(function (gpu) {
+    return '<tr><td>' + gpu.index + '</td><td>' + gpu.utilization_gpu + '</td><td>' + gpu.memory_used_mb + '</td><td>' + gpu.power_draw_w + '</td><td>' + gpu.temperature_c + '</td><td>' + ((gpu.compute_pids || []).join(',')) + '</td></tr>';
+  }).join('');
   document.getElementById('gpuBody').innerHTML = rows || '<tr><td colspan="6">无数据</td></tr>';
   document.getElementById('healthBody').textContent = JSON.stringify(health, null, 2);
   document.getElementById('events').textContent = fmtEvents(status.events || []);
 }
 
-async function refresh() {
-  try {
-    const [status, health] = await Promise.all([api('/api/status'), api('/api/health')]);
-    render(status, health);
-  } catch (err) {
-    document.getElementById('events').textContent = `拉取状态失败: ${err.message}`;
-  }
+function refresh() {
+  return Promise.all([api('/api/status'), api('/api/health')])
+    .then(function (results) {
+      render(results[0], results[1]);
+    })
+    .catch(function (err) {
+      document.getElementById('events').textContent = '拉取状态失败: ' + err.message;
+    });
 }
 
-document.getElementById('saveToken').onclick = async () => {
+document.getElementById('saveToken').onclick = function () {
   bearerToken = document.getElementById('token').value.trim();
-  await refresh();
+  refresh();
 };
-document.getElementById('btnEnable').onclick = async () => { await api('/api/notify', 'POST', { enabled: true }); await refresh(); };
-document.getElementById('btnDisable').onclick = async () => { await api('/api/notify', 'POST', { enabled: false }); await refresh(); };
-document.getElementById('btnTest').onclick = async () => { await api('/api/test-notify', 'POST', {}); await refresh(); };
-document.getElementById('btnReload').onclick = async () => { await api('/api/reload-config', 'POST', {}); await refresh(); };
+document.getElementById('btnEnable').onclick = function () { api('/api/notify', 'POST', { enabled: true }).then(refresh); };
+document.getElementById('btnDisable').onclick = function () { api('/api/notify', 'POST', { enabled: false }).then(refresh); };
+document.getElementById('btnTest').onclick = function () { api('/api/test-notify', 'POST', {}).then(refresh); };
+document.getElementById('btnReload').onclick = function () { api('/api/reload-config', 'POST', {}).then(refresh); };
 
 refresh();
 setInterval(refresh, 5000);
@@ -154,6 +162,10 @@ def create_app(runtime: MonitorRuntimeService) -> Flask:
     @app.get("/")
     def index() -> str:
         return _html_page()
+
+    @app.get("/favicon.ico")
+    def favicon() -> Response:
+        return Response(status=204)
 
     @app.get("/api/status")
     def status() -> Any:
