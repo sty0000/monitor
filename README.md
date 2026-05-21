@@ -14,6 +14,24 @@
 
 ## Install
 
+### Option A: Conda（推荐，适合已有 Miniconda/Anaconda 的机器）
+
+```bash
+git clone https://github.com/sty0000/monitor
+conda create -n monitor python=3.10 -y
+conda activate monitor
+cd monitor
+pip install -U pip
+pip install -r requirements.txt
+```
+
+注意：
+
+- `pip install -r requirements.txt` 需要在仓库根目录执行
+- 如果你还没 `cd monitor` 就安装依赖，会报 `Could not open requirements file`
+
+### Option B: venv（适合部署到固定目录，如 `/opt/monitor`）
+
 ```bash
 cd /opt/monitor
 python3 -m venv .venv
@@ -94,13 +112,48 @@ python -m monitor.agent --config config.yaml --once
 
 ## systemd
 
+推荐先确认你使用的是哪种安装方式：
+
+- 如果项目目录和 Python 环境都放在 `/opt/monitor` 下，可直接使用仓库自带的 service 模板
+- 如果项目放在 `~/.../monitor`，且 Python 来自 Conda 环境，需要先修改 service 文件中的路径
+
 1. 安装 service 文件：
 
 ```bash
 sudo cp deploy/gpu-monitor-dashboard.service /etc/systemd/system/
 ```
 
-2. 创建环境文件：
+2. 如使用 Conda 或自定义目录，先修改 service 文件：
+
+```bash
+sudo nano /etc/systemd/system/gpu-monitor-dashboard.service
+```
+
+常见需要修改的项：
+
+- `WorkingDirectory`
+- `ExecStart`
+- `User`
+- `Group`
+
+例如，若你的项目位于 `~/path-to-proj/monitor`，Conda 环境名为 `monitor`，可改为：
+
+```ini
+[Service]
+WorkingDirectory=/home/username/path-to-proj/monitor
+ExecStart=/home/username/path-to-proj/monitor/venv/bin/python -m monitor.dashboard --config /home/username/path-to-proj/monitor/config.yaml
+ProtectHome=false
+User=username
+Group=username
+```
+
+说明：
+
+- 默认模板假设项目部署在 `/opt/monitor`
+- 若 `ExecStart` 或 `WorkingDirectory` 指向不存在的路径，服务会报 `status=203/EXEC`
+- 若项目或 Python 位于 `/home/...` 下，而 service 中保留 `ProtectHome=true`，也可能导致 `203/EXEC`
+
+3. 创建环境文件:
 
 ```bash
 sudo tee /etc/default/gpu-monitor >/dev/null <<'EOF'
@@ -109,17 +162,25 @@ GPU_MONITOR_DASHBOARD_AUTH_TOKEN=CHANGE_ME_BEARER_TOKEN
 EOF
 ```
 
-3. 启动并开机自启：
+4. 启动并开机自启：
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now gpu-monitor-dashboard
 ```
 
-4. 查看日志：
+5. 查看状态与日志：
 
 ```bash
+journalctl -u gpu-monitor-dashboard -n 100 --no-pager
+sudo systemctl status gpu-monitor-dashboard
 journalctl -u gpu-monitor-dashboard -f
+```
+
+6. 重启服务：
+
+```bash
+sudo systemctl restart gpu-monitor-dashboard
 ```
 
 ## Metrics
@@ -151,3 +212,6 @@ journalctl -u gpu-monitor-dashboard -f
 - `dashboard.auth.token is required`: 在 `config.yaml` 或环境变量中设置 Token
 - 无法收到告警：检查 `notify.strategy.order`、各渠道配置和服务器出网
 - 日志过多：可调高 `logging.level` 或拉长采样周期
+- `Could not open requirements file`: 先进入仓库根目录再执行 `pip install -r requirements.txt`
+- `status=203/EXEC`: 重点检查 `/etc/systemd/system/gpu-monitor-dashboard.service` 中的 `WorkingDirectory`、`ExecStart` 是否真实存在且可执行
+- `status=203/EXEC` 且项目位于 `/home/...`: 检查是否仍启用了 `ProtectHome=true`；若使用 home 目录部署，请改为 `ProtectHome=false`
