@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 
 from monitor.dashboard import create_app
 from monitor.runtime_service import MonitorRuntimeService
@@ -38,3 +38,16 @@ def test_dashboard_read_can_be_open_by_default(tmp_path: Path) -> None:
     response = client.get("/api/health")
     assert response.status_code == 200
 
+
+
+def test_dashboard_index_contains_instance_name_placeholder(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    runtime = MonitorRuntimeService(config_path)
+    app = create_app(runtime)
+    client = app.test_client()
+    response = client.get("/")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'id="instanceName"' in html
+    assert 'pageTitle' in html

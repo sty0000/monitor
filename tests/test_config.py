@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 
 from monitor.config import ConfigError, load_config
 
@@ -23,6 +23,8 @@ dashboard:
     assert config.monitor.interval_seconds == 20
     assert config.monitor.command_timeout_seconds == 7
     assert config.dashboard.auth.token == "secret-token"
+    assert config.threshold.high_temperature_c == 85
+    assert config.threshold.high_temperature_minutes == 3
 
 
 def test_load_config_requires_token_when_auth_enabled(tmp_path: Path) -> None:
@@ -33,3 +35,23 @@ def test_load_config_requires_token_when_auth_enabled(tmp_path: Path) -> None:
         assert False, "expected ConfigError"
     except ConfigError:
         pass
+
+
+def test_load_config_reads_temperature_thresholds(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+threshold:
+  high_temperature_c: 88
+  high_temperature_minutes: 2.5
+dashboard:
+  auth:
+    enabled: true
+    token: "secret-token"
+""",
+        encoding="utf-8",
+    )
+    config = load_config(config_path)
+    assert config.threshold.high_temperature_c == 88
+    assert config.threshold.high_temperature_minutes == 2.5
+

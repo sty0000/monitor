@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
@@ -57,6 +57,8 @@ class ThresholdConfig:
     usage_percent: float = 20
     idle_minutes: float = 10
     no_process_minutes: float = 5
+    high_temperature_c: float = 85
+    high_temperature_minutes: float = 3
     warmup_minutes: float = 3
     armed_stable_minutes: float = 1
     low_usage_mode: str = "any"
@@ -194,6 +196,8 @@ class AppConfig:
                 "usage_percent": self.threshold.usage_percent,
                 "idle_minutes": self.threshold.idle_minutes,
                 "no_process_minutes": self.threshold.no_process_minutes,
+                "high_temperature_c": self.threshold.high_temperature_c,
+                "high_temperature_minutes": self.threshold.high_temperature_minutes,
                 "warmup_minutes": self.threshold.warmup_minutes,
                 "armed_stable_minutes": self.threshold.armed_stable_minutes,
                 "low_usage_mode": self.threshold.low_usage_mode,
@@ -323,6 +327,8 @@ def load_config(path: Path) -> AppConfig:
             usage_percent=float(threshold.get("usage_percent", 20)),
             idle_minutes=float(threshold.get("idle_minutes", 10)),
             no_process_minutes=float(threshold.get("no_process_minutes", 5)),
+            high_temperature_c=float(threshold.get("high_temperature_c", 85)),
+            high_temperature_minutes=float(threshold.get("high_temperature_minutes", 3)),
             warmup_minutes=float(threshold.get("warmup_minutes", 3)),
             armed_stable_minutes=float(threshold.get("armed_stable_minutes", 1)),
             low_usage_mode=str(threshold.get("low_usage_mode", "any")),
@@ -397,3 +403,5 @@ def load_config(path: Path) -> AppConfig:
         ),
     )
     return _validate(config)
+
+

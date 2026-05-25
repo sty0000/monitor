@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 from pathlib import Path
@@ -34,7 +34,8 @@ def _html_page() -> str:
   </style>
 </head>
 <body>
-<h1>GPU Monitor Dashboard</h1>
+<h1 id="pageTitle">GPU Monitor Dashboard</h1>
+<p>设备名：<strong id="instanceName">-</strong></p>
 <p>请在下方填入 Bearer Token（如果启用鉴权）。浏览器不会自动保存。</p>
 <div>
   <input id="token" type="password" placeholder="Bearer Token" />
@@ -107,6 +108,10 @@ function fmtEvents(events) {
 }
 
 function render(status, health) {
+  var instanceName = ((status.config_summary || {}).monitor || {}).instance_name || '-';
+  document.getElementById('instanceName').textContent = instanceName;
+  document.getElementById('pageTitle').textContent = 'GPU Monitor Dashboard - ' + instanceName;
+  document.title = 'GPU Monitor Dashboard - ' + instanceName;
   var state = status.monitor_state || '-';
   var cls = state === 'ACTIVE' ? 'ok' : ((state.indexOf('ALERT') >= 0 || state === 'ERROR') ? 'bad' : 'warn');
   document.getElementById('monitorState').innerHTML = '<span class="' + cls + '">' + state + '</span><div>' + (status.reason || '') + '</div>';
@@ -247,3 +252,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+

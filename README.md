@@ -1,4 +1,4 @@
-# GPU Training Monitor
+﻿# GPU Training Monitor
 
 独立常驻 GPU 监控进程 + 前端控制台：查看设备运行状态并进行多渠道提醒。
 
@@ -7,6 +7,7 @@
 - `nvidia-smi` 一致性快照采样：`utilization.gpu` / `memory.used` / `power.draw` / `temperature.gpu`
 - 单写者 runtime：CLI 与 Dashboard 共用同一套状态机、通知与重载逻辑
 - 状态机防误报：`WARMUP` -> `WAITING_ACTIVE` / `ARMING` -> `ACTIVE` -> `LOW_USAGE_ALERT` / `NO_PROCESS_ALERT`
+- 支持高温告警：GPU 温度持续超过阈值时触发 `HIGH_TEMPERATURE_ALERT`
 - 低利用率策略可配置：`any` / `all` / `majority` / `selected_primary`
 - 多渠道通知：企业微信、飞书、钉钉、Telegram、Webhook、SMTP（支持 failover）
 - 结构化日志、`/api/health`、`/metrics`、事件持久化
@@ -63,6 +64,8 @@ vim config.yaml
 - `monitor.command_timeout_seconds`: `nvidia-smi` 超时秒数
 - `threshold.low_usage_mode`: `any` / `all` / `majority` / `selected_primary`
 - `threshold.armed_stable_minutes`: 首次识别 compute 进程后的稳定窗口
+- `threshold.high_temperature_c`: 高温告警阈值，默认 `85`
+- `threshold.high_temperature_minutes`: 高温持续时长，超过后触发告警
 - `alert.recovery.*`: 恢复通知策略
 - `dashboard.auth.*`: Bearer Token 鉴权
 - `logging.event_log_path`: 事件 JSONL 持久化路径
@@ -215,3 +218,7 @@ sudo systemctl restart gpu-monitor-dashboard
 - `Could not open requirements file`: 先进入仓库根目录再执行 `pip install -r requirements.txt`
 - `status=203/EXEC`: 重点检查 `/etc/systemd/system/gpu-monitor-dashboard.service` 中的 `WorkingDirectory`、`ExecStart` 是否真实存在且可执行
 - `status=203/EXEC` 且项目位于 `/home/...`: 检查是否仍启用了 `ProtectHome=true`；若使用 home 目录部署，请改为 `ProtectHome=false`
+- 想加高温提醒：在 `config.yaml` 的 `threshold` 下设置 `high_temperature_c` 和 `high_temperature_minutes`
+
+
+

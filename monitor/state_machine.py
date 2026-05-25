@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
@@ -16,6 +16,7 @@ class MonitorState:
     armed_since: float | None = None
     low_usage_since: float | None = None
     no_process_since: float | None = None
+    high_temperature_since: dict[int, float] = field(default_factory=dict)
     active_alert: str | None = None
     last_alert_sent_at: dict[str, float] = field(default_factory=dict)
     last_any_alert_sent_at: float | None = None
@@ -88,6 +89,36 @@ def _is_low_usage(gpus: list[dict[str, Any]], config: AppConfig) -> dict[str, An
     return None
 
 
+def _is_high_temperature(state: MonitorState, gpus: list[dict[str, Any]], config: AppConfig, current: float) -> dict[str, Any] | None:
+    threshold = config.threshold.high_temperature_c
+    duration_seconds = config.threshold.high_temperature_minutes * 60
+    active_indexes = set()
+
+    for gpu in gpus:
+        gpu_index = gpu.get("index")
+        if gpu_index is None:
+            continue
+        temperature_c = gpu.get("temperature_c", -1)
+        if temperature_c is None or temperature_c < 0:
+            state.high_temperature_since.pop(gpu_index, None)
+            continue
+        if temperature_c > threshold:
+            active_indexes.add(gpu_index)
+            since = state.high_temperature_since.get(gpu_index)
+            if since is None:
+                state.high_temperature_since[gpu_index] = current
+                since = current
+            if (current - since) >= duration_seconds:
+                return gpu
+        else:
+            state.high_temperature_since.pop(gpu_index, None)
+
+    stale_indexes = [gpu_index for gpu_index in state.high_temperature_since if gpu_index not in active_indexes]
+    for gpu_index in stale_indexes:
+        state.high_temperature_since.pop(gpu_index, None)
+    return None
+
+
 def evaluate_state(config: AppConfig, state: MonitorState, sample: dict[str, Any], now: float | None = None) -> EvaluationResult:
     current = now or time.time()
     warmup_seconds = config.threshold.warmup_minutes * 60
@@ -103,7 +134,16 @@ def evaluate_state(config: AppConfig, state: MonitorState, sample: dict[str, Any
         state.low_usage_since = None
         state.no_process_since = None
         state.armed_since = None
+        state.high_temperature_since.clear()
         return EvaluationResult("WARMUP", None, "still in warmup window")
+
+    high_temperature_gpu = _is_high_temperature(state, gpus, config, current)
+    if high_temperature_gpu is not None:
+        details = (
+            f"gpu={high_temperature_gpu['index']} temp={high_temperature_gpu['temperature_c']}C "
+            f"threshold={config.threshold.high_temperature_c}C duration={config.threshold.high_temperature_minutes}m"
+        )
+        return EvaluationResult("HIGH_TEMPERATURE_ALERT", "HIGH_TEMPERATURE_ALERT", details)
 
     if has_compute and not state.armed:
         if state.armed_since is None:
@@ -170,3 +210,4 @@ def build_recovered_message(instance_name: str, previous_alert: str, sample: dic
             f"- gpu{gpu['index']}: util={gpu['utilization_gpu']}%, mem={gpu['memory_used_mb']}MB, power={gpu['power_draw_w']}W, temp={gpu['temperature_c']}C, pids={gpu['compute_pids']}"
         )
     return title, "\n".join(lines)
+

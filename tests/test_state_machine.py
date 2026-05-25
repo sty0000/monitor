@@ -1,4 +1,4 @@
-import time
+﻿import time
 
 from monitor.config import AppConfig, DashboardAuthConfig, DashboardConfig
 from monitor.state_machine import (
@@ -48,4 +48,34 @@ def test_alert_cooldown_marks_only_after_send() -> None:
 def test_recovery_respects_config() -> None:
     config = _config()
     assert can_send_recovery(config, "LOW_USAGE_ALERT")
+
+
+
+def test_state_machine_high_temperature_alert_after_duration() -> None:
+    config = _config()
+    state = MonitorState(start_ts=time.time() - 600)
+    now = time.time()
+    sample = {"gpus": [{"index": 0, "temperature_c": 86, "utilization_gpu": 0, "compute_pids": []}]}
+
+    first = evaluate_state(config, state, sample, now=now)
+    assert first.state_name == "WAITING_ACTIVE"
+
+    second = evaluate_state(config, state, sample, now=now + (config.threshold.high_temperature_minutes * 60) + 1)
+    assert second.state_name == "HIGH_TEMPERATURE_ALERT"
+    assert second.alert_key == "HIGH_TEMPERATURE_ALERT"
+
+
+def test_state_machine_high_temperature_recovers_when_back_to_normal() -> None:
+    config = _config()
+    state = MonitorState(start_ts=time.time() - 600)
+    now = time.time()
+    hot_sample = {"gpus": [{"index": 0, "temperature_c": 90, "utilization_gpu": 0, "compute_pids": []}]}
+    cool_sample = {"gpus": [{"index": 0, "temperature_c": 70, "utilization_gpu": 0, "compute_pids": []}]}
+
+    evaluate_state(config, state, hot_sample, now=now)
+    hot_result = evaluate_state(config, state, hot_sample, now=now + (config.threshold.high_temperature_minutes * 60) + 1)
+    assert hot_result.state_name == "HIGH_TEMPERATURE_ALERT"
+
+    recovered = evaluate_state(config, state, cool_sample, now=now + (config.threshold.high_temperature_minutes * 60) + 2)
+    assert recovered.state_name == "WAITING_ACTIVE"
 

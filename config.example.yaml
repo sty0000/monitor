@@ -1,4 +1,4 @@
-monitor:
+﻿monitor:
   instance_name: "gpu-monitor"
   interval_seconds: 15
   command_timeout_seconds: 8
@@ -8,6 +8,8 @@ threshold:
   usage_percent: 20
   idle_minutes: 10
   no_process_minutes: 5
+  high_temperature_c: 85
+  high_temperature_minutes: 3
   warmup_minutes: 3
   armed_stable_minutes: 1
   low_usage_mode: "any"
@@ -79,3 +81,5 @@ notify:
     bot_token: "123456:ABCDEF_REPLACE_ME"
     chat_id: "-1001234567890"
     api_base: "https://api.telegram.org"
+
+
