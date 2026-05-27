@@ -1,4 +1,4 @@
-from monitor.collector import GPUCollector
+﻿from monitor.collector import GPUCollector
 
 
 class StubCollector(GPUCollector):
@@ -21,3 +21,16 @@ def test_collect_sample_reuses_single_gpu_snapshot() -> None:
     assert sample["gpu_count"] == 2
     assert sample["gpus"][0]["compute_pids"] == [123]
 
+
+
+def test_collect_sample_treats_bracketed_na_as_unavailable() -> None:
+    collector = StubCollector(
+        [
+            "0, GPU-0, [N/A], 1000, [N/A], 60\n",
+            "",
+        ]
+    )
+    sample = collector.collect_sample(type("cfg", (), {"command_timeout_seconds": 8, "gpu_ids": []})())
+    gpu = sample["gpus"][0]
+    assert gpu["utilization_gpu"] == -1.0
+    assert gpu["power_draw_w"] == -1.0

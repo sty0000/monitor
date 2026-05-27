@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import subprocess
 from dataclasses import asdict, dataclass
@@ -25,14 +25,14 @@ class GPUStat:
 
 def _to_float(raw: str) -> float:
     text = raw.strip()
-    if text in {"", "N/A", "[Not Supported]"}:
+    if text in {"", "N/A", "[N/A]", "[Not Supported]"}:
         return -1.0
     return float(text)
 
 
 def _to_int(raw: str) -> int:
     text = raw.strip()
-    if text in {"", "N/A", "[Not Supported]"}:
+    if text in {"", "N/A", "[N/A]", "[Not Supported]"}:
         return -1
     return int(float(text))
 
@@ -132,4 +132,5 @@ class GPUCollector:
                 for gpu in stats
             ],
         }
+
 
