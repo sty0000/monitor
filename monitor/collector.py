@@ -25,16 +25,22 @@ class GPUStat:
 
 def _to_float(raw: str) -> float:
     text = raw.strip()
-    if text in {"", "N/A", "[N/A]", "[Not Supported]"}:
+    if not text:
         return -1.0
-    return float(text)
+    try:
+        return float(text)
+    except ValueError:
+        return -1.0
 
 
 def _to_int(raw: str) -> int:
     text = raw.strip()
-    if text in {"", "N/A", "[N/A]", "[Not Supported]"}:
+    if not text:
         return -1
-    return int(float(text))
+    try:
+        return int(float(text))
+    except ValueError:
+        return -1
 
 
 class GPUCollector:
@@ -132,5 +138,6 @@ class GPUCollector:
                 for gpu in stats
             ],
         }
+
 
 

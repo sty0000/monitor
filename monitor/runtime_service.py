@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import logging
@@ -281,6 +281,50 @@ class MonitorRuntimeService:
         self._append_event("notify_sent", subject, {"notifier": result.notifier, "alert": evaluation.alert_key})
         self.state.active_alert = evaluation.alert_key
 
+    def _maybe_send_runtime_error_alert(self, now: float) -> None:
+        runtime_error = self.config.alert.runtime_error
+        alert_key = "RUNTIME_ERROR_ALERT"
+        if not runtime_error.enabled:
+            return
+        if self.consecutive_failures < runtime_error.consecutive_failures:
+            return
+        if not self.notify_enabled:
+            self._append_event("notify_skip", "notify disabled by master switch", {"alert": alert_key})
+            self.state.active_alert = alert_key
+            return
+        cooldown_seconds = runtime_error.cooldown_minutes * 60
+        min_interval_seconds = self.config.alert.min_interval_minutes * 60
+        if not should_send_with_cooldown(self.state, alert_key, cooldown_seconds, now):
+            self.state.active_alert = alert_key
+            return
+        if not should_send_by_global_interval(self.state, min_interval_seconds, now):
+            self.state.active_alert = alert_key
+            return
+        subject = f"[GPU Monitor][{self.config.monitor.instance_name}] {alert_key}"
+        body = "\n".join(
+            [
+                f"monitor: {self.config.monitor.instance_name}",
+                f"time(utc): {self.last_error_ts}",
+                f"alert: {alert_key}",
+                f"reason: runtime cycle failed",
+                f"error_type: {self.last_error_type}",
+                f"consecutive_failures: {self.consecutive_failures}",
+                f"last_error: {self.last_error}",
+            ]
+        )
+        try:
+            result = self.notification_service.send(subject, body)
+        except NotificationError as notify_exc:
+            self.metrics.notify_total.labels(notifier="runtime_error_alert", outcome="error").inc()
+            self._append_event("notify_error", str(notify_exc), {"alert": alert_key})
+            LOGGER.warning("Runtime error alert notification failed", extra={"event_type": "notify_error", "alert": alert_key})
+            self.state.active_alert = alert_key
+            return
+        mark_alert_sent(self.state, alert_key, now)
+        self.metrics.alert_total.labels(alert_key=alert_key).inc()
+        self.metrics.notify_total.labels(notifier=result.notifier, outcome="success").inc()
+        self._append_event("notify_sent", subject, {"notifier": result.notifier, "alert": alert_key})
+        self.state.active_alert = alert_key
     def _maybe_send_recovery(self, sample: dict[str, Any], now: float) -> None:
         previous_alert = self.state.active_alert
         if not previous_alert or not can_send_recovery(self.config, previous_alert):
@@ -354,6 +398,7 @@ class MonitorRuntimeService:
         self.metrics.consecutive_failures.set(self.consecutive_failures)
         self._set_state_metrics("ERROR")
         self._append_event("error", self.last_error, {"error_type": self.last_error_type, "consecutive_failures": self.consecutive_failures})
+        self._maybe_send_runtime_error_alert(time.time())
         LOGGER.exception(
             "runtime cycle error",
             extra={"event_type": "runtime_error", "error_type": self.last_error_type, "state": "ERROR"},
@@ -375,3 +420,5 @@ class MonitorRuntimeService:
             except Exception as exc:  # noqa: BLE001
                 self._handle_cycle_error(exc)
             next_sample_at = time.monotonic() + self.config.monitor.interval_seconds
+
+

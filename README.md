@@ -66,6 +66,7 @@ vim config.yaml
 - `threshold.armed_stable_minutes`: 首次识别 compute 进程后的稳定窗口
 - `threshold.high_temperature_c`: 高温告警阈值，默认 `85`
 - `threshold.high_temperature_minutes`: 高温持续时长，超过后触发告警
+- `alert.runtime_error.*`: 运行时错误通知策略，默认连续失败 `3` 次后提醒
 - `alert.recovery.*`: 恢复通知策略
 - `dashboard.auth.*`: Bearer Token 鉴权
 - `logging.event_log_path`: 事件 JSONL 持久化路径
@@ -219,6 +220,7 @@ sudo systemctl restart gpu-monitor-dashboard
 - `status=203/EXEC`: 重点检查 `/etc/systemd/system/gpu-monitor-dashboard.service` 中的 `WorkingDirectory`、`ExecStart` 是否真实存在且可执行
 - `status=203/EXEC` 且项目位于 `/home/...`: 检查是否仍启用了 `ProtectHome=true`；若使用 home 目录部署，请改为 `ProtectHome=false`
 - 想加高温提醒：在 `config.yaml` 的 `threshold` 下设置 `high_temperature_c` 和 `high_temperature_minutes`
+
 
 
 

@@ -73,9 +73,17 @@ class RecoveryConfig:
 
 
 @dataclass(frozen=True)
+class RuntimeErrorAlertConfig:
+    enabled: bool = True
+    consecutive_failures: int = 3
+    cooldown_minutes: float = 30
+
+
+@dataclass(frozen=True)
 class AlertConfig:
     cooldown_minutes: float = 30
     min_interval_minutes: float = 3
+    runtime_error: RuntimeErrorAlertConfig = field(default_factory=RuntimeErrorAlertConfig)
     recovery: RecoveryConfig = field(default_factory=RecoveryConfig)
 
 
@@ -206,6 +214,11 @@ class AppConfig:
             "alert": {
                 "cooldown_minutes": self.alert.cooldown_minutes,
                 "min_interval_minutes": self.alert.min_interval_minutes,
+                "runtime_error": {
+                    "enabled": self.alert.runtime_error.enabled,
+                    "consecutive_failures": self.alert.runtime_error.consecutive_failures,
+                    "cooldown_minutes": self.alert.runtime_error.cooldown_minutes,
+                },
                 "recovery": {
                     "enabled": self.alert.recovery.enabled,
                     "cooldown_minutes": self.alert.recovery.cooldown_minutes,
@@ -306,6 +319,7 @@ def load_config(path: Path) -> AppConfig:
     metrics = raw.get("metrics", {})
 
     recovery = alert.get("recovery", {})
+    runtime_error = alert.get("runtime_error", {})
     dashboard_auth = dashboard.get("auth", {})
     notify_control = notify.get("control", {})
     strategy = notify.get("strategy", {})
@@ -337,6 +351,11 @@ def load_config(path: Path) -> AppConfig:
         alert=AlertConfig(
             cooldown_minutes=float(alert.get("cooldown_minutes", 30)),
             min_interval_minutes=float(alert.get("min_interval_minutes", 3)),
+            runtime_error=RuntimeErrorAlertConfig(
+                enabled=_parse_bool(runtime_error.get("enabled", True), True),
+                consecutive_failures=int(runtime_error.get("consecutive_failures", 3)),
+                cooldown_minutes=float(runtime_error.get("cooldown_minutes", 30)),
+            ),
             recovery=RecoveryConfig(
                 enabled=_parse_bool(recovery.get("enabled", True), True),
                 cooldown_minutes=float(recovery.get("cooldown_minutes", 5)),
@@ -403,5 +422,6 @@ def load_config(path: Path) -> AppConfig:
         ),
     )
     return _validate(config)
+
 
 

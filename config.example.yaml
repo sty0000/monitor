@@ -18,6 +18,10 @@ threshold:
 alert:
   cooldown_minutes: 30
   min_interval_minutes: 3
+  runtime_error:
+    enabled: true
+    consecutive_failures: 3
+    cooldown_minutes: 30
   recovery:
     enabled: true
     cooldown_minutes: 5
@@ -81,5 +85,6 @@ notify:
     bot_token: "123456:ABCDEF_REPLACE_ME"
     chat_id: "-1001234567890"
     api_base: "https://api.telegram.org"
+
 
 

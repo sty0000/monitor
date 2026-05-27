@@ -34,3 +34,18 @@ def test_collect_sample_treats_bracketed_na_as_unavailable() -> None:
     gpu = sample["gpus"][0]
     assert gpu["utilization_gpu"] == -1.0
     assert gpu["power_draw_w"] == -1.0
+
+
+def test_collect_sample_treats_reset_required_as_unavailable() -> None:
+    collector = StubCollector(
+        [
+            "0, GPU-0, [GPU requires reset], [GPU requires reset], [GPU requires reset], [GPU requires reset]\n",
+            "",
+        ]
+    )
+    sample = collector.collect_sample(type("cfg", (), {"command_timeout_seconds": 8, "gpu_ids": []})())
+    gpu = sample["gpus"][0]
+    assert gpu["utilization_gpu"] == -1.0
+    assert gpu["memory_used_mb"] == -1.0
+    assert gpu["power_draw_w"] == -1.0
+    assert gpu["temperature_c"] == -1.0

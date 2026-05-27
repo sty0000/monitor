@@ -6,7 +6,7 @@ from typing import Any
 
 from .config import AppConfig
 
-SEVERE_ALERTS = {"NO_PROCESS_ALERT"}
+SEVERE_ALERTS = {"NO_PROCESS_ALERT", "RUNTIME_ERROR_ALERT"}
 
 
 @dataclass
@@ -210,4 +210,5 @@ def build_recovered_message(instance_name: str, previous_alert: str, sample: dic
             f"- gpu{gpu['index']}: util={gpu['utilization_gpu']}%, mem={gpu['memory_used_mb']}MB, power={gpu['power_draw_w']}W, temp={gpu['temperature_c']}C, pids={gpu['compute_pids']}"
         )
     return title, "\n".join(lines)
+
 
