@@ -6,7 +6,11 @@ from typing import Any
 
 from .config import AppConfig
 
-SEVERE_ALERTS = {"NO_PROCESS_ALERT", "RUNTIME_ERROR_ALERT"}
+SEVERE_ALERTS = {"NO_PROCESS_ALERT", "RUNTIME_ERROR_ALERT", "GPU_ERROR_ALERT"}
+
+
+def _fmt_value(value: Any) -> Any:
+    return "N/A" if value is None else value
 
 
 @dataclass
@@ -60,7 +64,11 @@ def can_send_recovery(config: AppConfig, previous_alert: str | None) -> bool:
 
 def _is_low_usage(gpus: list[dict[str, Any]], config: AppConfig) -> dict[str, Any] | None:
     threshold = config.threshold.usage_percent
-    candidates = [gpu for gpu in gpus if gpu.get("utilization_gpu", -1) >= 0]
+    candidates = [
+        gpu
+        for gpu in gpus
+        if isinstance(gpu.get("utilization_gpu"), (int, float)) and gpu.get("utilization_gpu", -1) >= 0
+    ]
     if not candidates:
         return None
 
@@ -89,6 +97,19 @@ def _is_low_usage(gpus: list[dict[str, Any]], config: AppConfig) -> dict[str, An
     return None
 
 
+def _has_gpu_device_error(gpus: list[dict[str, Any]], config: AppConfig) -> dict[str, Any] | None:
+    if not config.alert.gpu_error.enabled:
+        return None
+    muted_gpu_ids = set(config.alert.gpu_error.muted_gpu_ids)
+    for gpu in gpus:
+        gpu_index = gpu.get("index")
+        if gpu_index in muted_gpu_ids:
+            continue
+        if gpu.get("device_error"):
+            return gpu
+    return None
+
+
 def _is_high_temperature(state: MonitorState, gpus: list[dict[str, Any]], config: AppConfig, current: float) -> dict[str, Any] | None:
     threshold = config.threshold.high_temperature_c
     duration_seconds = config.threshold.high_temperature_minutes * 60
@@ -98,8 +119,8 @@ def _is_high_temperature(state: MonitorState, gpus: list[dict[str, Any]], config
         gpu_index = gpu.get("index")
         if gpu_index is None:
             continue
-        temperature_c = gpu.get("temperature_c", -1)
-        if temperature_c is None or temperature_c < 0:
+        temperature_c = gpu.get("temperature_c")
+        if temperature_c is None:
             state.high_temperature_since.pop(gpu_index, None)
             continue
         if temperature_c > threshold:
@@ -136,6 +157,11 @@ def evaluate_state(config: AppConfig, state: MonitorState, sample: dict[str, Any
         state.armed_since = None
         state.high_temperature_since.clear()
         return EvaluationResult("WARMUP", None, "still in warmup window")
+
+    gpu_error = _has_gpu_device_error(gpus, config)
+    if gpu_error is not None:
+        details = f"gpu={gpu_error['index']} error={gpu_error['device_error']}"
+        return EvaluationResult("GPU_ERROR_ALERT", "GPU_ERROR_ALERT", details)
 
     high_temperature_gpu = _is_high_temperature(state, gpus, config, current)
     if high_temperature_gpu is not None:
@@ -189,8 +215,9 @@ def build_alert_message(instance_name: str, alert_key: str, sample: dict[str, An
     title = f"[GPU Monitor][{instance_name}] {alert_key}"
     lines = [f"monitor: {instance_name}", f"time(utc): {sample['timestamp']}", f"alert: {alert_key}", f"reason: {reason}", "", "gpu snapshot:"]
     for gpu in sample.get("gpus", []):
+        error_text = gpu.get("device_error") or "OK"
         lines.append(
-            f"- gpu{gpu['index']}: util={gpu['utilization_gpu']}%, mem={gpu['memory_used_mb']}MB, power={gpu['power_draw_w']}W, temp={gpu['temperature_c']}C, pids={gpu['compute_pids']}"
+            f"- gpu{gpu['index']}: util={_fmt_value(gpu.get('utilization_gpu'))}%, mem={_fmt_value(gpu.get('memory_used_mb'))}MB, power={_fmt_value(gpu.get('power_draw_w'))}W, temp={_fmt_value(gpu.get('temperature_c'))}C, pids={gpu['compute_pids']}, error={error_text}"
         )
     return title, "\n".join(lines)
 
@@ -206,8 +233,9 @@ def build_recovered_message(instance_name: str, previous_alert: str, sample: dic
         "gpu snapshot:",
     ]
     for gpu in sample.get("gpus", []):
+        error_text = gpu.get("device_error") or "OK"
         lines.append(
-            f"- gpu{gpu['index']}: util={gpu['utilization_gpu']}%, mem={gpu['memory_used_mb']}MB, power={gpu['power_draw_w']}W, temp={gpu['temperature_c']}C, pids={gpu['compute_pids']}"
+            f"- gpu{gpu['index']}: util={_fmt_value(gpu.get('utilization_gpu'))}%, mem={_fmt_value(gpu.get('memory_used_mb'))}MB, power={_fmt_value(gpu.get('power_draw_w'))}W, temp={_fmt_value(gpu.get('temperature_c'))}C, pids={gpu['compute_pids']}, error={error_text}"
         )
     return title, "\n".join(lines)
 

@@ -67,6 +67,7 @@ vim config.yaml
 - `threshold.high_temperature_c`: 高温告警阈值，默认 `85`
 - `threshold.high_temperature_minutes`: 高温持续时长，超过后触发告警
 - `alert.runtime_error.*`: 运行时错误通知策略，默认连续失败 `3` 次后提醒
+- `alert.gpu_error.*`: GPU 设备错误通知策略，可按 GPU ID 静音
 - `alert.recovery.*`: 恢复通知策略
 - `dashboard.auth.*`: Bearer Token 鉴权
 - `logging.event_log_path`: 事件 JSONL 持久化路径
@@ -187,6 +188,85 @@ journalctl -u gpu-monitor-dashboard -f
 sudo systemctl restart gpu-monitor-dashboard
 ```
 
+## DGX Spark
+
+Recommended DGX Spark settings use automatic platform detection, try DCGM first, and fall back to `nvidia-smi`:
+
+```yaml
+platform:
+  profile: "auto"
+  telemetry_order: ["dcgm", "nvidia_smi"]
+
+dashboard:
+  host: "127.0.0.1"
+  port: 8093
+```
+
+### DGX Spark dependencies
+
+Monitor does not require extra Python packages for DGX Spark. The DGX-specific telemetry is collected from system tools:
+
+- `nvidia-smi`: installed with the NVIDIA driver / DGX OS stack
+- `dcgmi`: provided by NVIDIA DCGM; optional but recommended
+- `ps`: provided by `procps`; used for Top Processes
+- `/proc/meminfo`: Linux kernel interface used for System / Unified Memory
+
+Check the tools first:
+
+```bash
+which nvidia-smi
+nvidia-smi -L
+which dcgmi || echo "dcgmi not found; monitor will fall back to nvidia-smi"
+which ps
+cat /proc/meminfo | head
+```
+
+If `dcgmi` is missing on DGX OS / Ubuntu, install or enable DCGM with your NVIDIA package source. Common Ubuntu package names are:
+
+```bash
+sudo apt update
+sudo apt install -y datacenter-gpu-manager
+```
+
+Some DGX OS images already include DCGM but the service may need to be enabled:
+
+```bash
+sudo systemctl enable --now nvidia-dcgm || true
+dcgmi discovery -l
+dcgmi health -c
+```
+
+If `datacenter-gpu-manager` is not found, keep `platform.telemetry_order: ["dcgm", "nvidia_smi"]`; monitor will report `dcgm_available=false` and continue with `nvidia-smi`. Do not install random third-party DCGM packages. Prefer NVIDIA/DGX OS repositories or NVIDIA's official CUDA/DCGM repository for your OS version.
+
+For systemd deployments, make sure service `PATH` can find `nvidia-smi`, `dcgmi`, and `ps`:
+
+```ini
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+```
+
+Then reload and restart:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart gpu-monitor-dashboard
+```
+
+
+DGX Spark behavior:
+
+- `/api/status` includes `platform_summary` with profile, architecture, OS, driver version, DCGM availability, and active telemetry source.
+- DGX Spark profile labels GPU memory as `GPU/Unified Mem MB`.
+- Dashboard shows `System / Unified Memory` from `/proc/meminfo`.
+- `dcgmi` failures are best-effort and automatically fall back to `nvidia-smi`; sampling continues.
+- To avoid conflicts with NVIDIA DGX Dashboard, keep this dashboard on a custom local port such as `8093`.
+
+SSH tunnel example:
+
+```bash
+ssh -L 8093:127.0.0.1:8093 ubuntu@DGX_SPARK_HOST
+```
+
+
 ## Metrics
 
 默认暴露 Prometheus 指标，例如：
@@ -220,6 +300,7 @@ sudo systemctl restart gpu-monitor-dashboard
 - `status=203/EXEC`: 重点检查 `/etc/systemd/system/gpu-monitor-dashboard.service` 中的 `WorkingDirectory`、`ExecStart` 是否真实存在且可执行
 - `status=203/EXEC` 且项目位于 `/home/...`: 检查是否仍启用了 `ProtectHome=true`；若使用 home 目录部署，请改为 `ProtectHome=false`
 - 想加高温提醒：在 `config.yaml` 的 `threshold` 下设置 `high_temperature_c` 和 `high_temperature_minutes`
+
 
 
 

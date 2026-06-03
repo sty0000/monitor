@@ -47,6 +47,8 @@ def _html_page() -> str:
   <div class="card"><h3>Notify</h3><div id="notifyState">-</div></div>
   <div class="card"><h3>Intervals</h3><div id="intervalState">-</div></div>
   <div class="card"><h3>Channels</h3><div id="routeState">-</div></div>
+  <div class="card"><h3>Platform</h3><pre id="platformBody">-</pre></div>
+  <div class="card"><h3>System / Unified Memory</h3><div id="memoryBody">-</div></div>
 </div>
 
 <div style="margin: 16px 0;">
@@ -59,8 +61,21 @@ def _html_page() -> str:
 <div class="card">
   <h3>GPU Snapshot</h3>
   <table>
-    <thead><tr><th>GPU</th><th>Util %</th><th>Mem MB</th><th>Power W</th><th>Temp C</th><th>PIDs</th></tr></thead>
+    <thead><tr><th>GPU</th><th>Util %</th><th id="gpuMemHeader">Mem MB</th><th>Power W</th><th>Temp C</th><th>PIDs</th><th>Device Error</th><th>GPU Error Alert</th></tr></thead>
     <tbody id="gpuBody"></tbody>
+  </table>
+</div>
+
+<div class="card" style="margin-top: 16px;">
+  <h3>Top Processes</h3>
+  <div style="margin-bottom: 8px;">
+    <button id="sortCpu">Sort by CPU</button>
+    <button id="sortMem">Sort by Memory</button>
+    <span id="processSortState">CPU</span>
+  </div>
+  <table>
+    <thead><tr><th>PID</th><th>User</th><th>CPU %</th><th>Mem %</th><th>RSS MB</th><th>Command</th><th>Args</th></tr></thead>
+    <tbody id="processBody"></tbody>
   </table>
 </div>
 
@@ -69,6 +84,7 @@ def _html_page() -> str:
 
 <script>
 var bearerToken = '';
+var processSortKey = 'cpu';
 
 function buildHeaders() {
   var headers = { 'Content-Type': 'application/json' };
@@ -119,11 +135,40 @@ function render(status, health) {
   document.getElementById('intervalState').textContent = status.interval_seconds + 's / cooldown ' + status.cooldown_minutes + 'm / global ' + status.min_interval_minutes + 'm';
   document.getElementById('routeState').textContent = (status.notifier_order_active || []).join(' -> ') || '(none)';
 
+  var platformSummary = status.platform_summary || {};
+  var systemMemory = (status.sample && status.sample.system_memory) || {};
+  var memoryLabel = platformSummary.profile === 'dgx_spark' ? 'GPU/Unified Mem MB' : 'Mem MB';
+  document.getElementById('gpuMemHeader').textContent = memoryLabel;
+  document.getElementById('platformBody').textContent = JSON.stringify(platformSummary, null, 2);
+  document.getElementById('memoryBody').innerHTML = systemMemory.ok ? ('used ' + systemMemory.used_mb + 'MB / total ' + systemMemory.total_mb + 'MB (' + systemMemory.used_percent + '%), available ' + systemMemory.available_mb + 'MB') : (systemMemory.error || 'N/A');
+
+  var mutedGpuIds = status.muted_gpu_error_ids || [];
   var gpus = (status.sample && status.sample.gpus) || [];
+  function fmtValue(value) {
+    return value === null || value === undefined ? 'N/A' : value;
+  }
   var rows = gpus.map(function (gpu) {
-    return '<tr><td>' + gpu.index + '</td><td>' + gpu.utilization_gpu + '</td><td>' + gpu.memory_used_mb + '</td><td>' + gpu.power_draw_w + '</td><td>' + gpu.temperature_c + '</td><td>' + ((gpu.compute_pids || []).join(',')) + '</td></tr>';
+    var muted = mutedGpuIds.indexOf(gpu.index) >= 0;
+    var errorText = gpu.device_error || '';
+    var buttonText = muted ? 'Enable GPU error alert' : 'Mute GPU error alert';
+    var button = '<button data-gpu-id="' + gpu.index + '" data-muted="' + muted + '" class="gpuMuteBtn">' + buttonText + '</button>';
+    return '<tr><td>' + gpu.index + '</td><td>' + fmtValue(gpu.utilization_gpu) + '</td><td>' + fmtValue(gpu.memory_used_mb) + '</td><td>' + fmtValue(gpu.power_draw_w) + '</td><td>' + fmtValue(gpu.temperature_c) + '</td><td>' + ((gpu.compute_pids || []).join(',')) + '</td><td class="' + (errorText ? 'bad' : 'ok') + '">' + (errorText || 'OK') + '</td><td>' + button + '</td></tr>';
   }).join('');
-  document.getElementById('gpuBody').innerHTML = rows || '<tr><td colspan="6">无数据</td></tr>';
+  document.getElementById('gpuBody').innerHTML = rows || '<tr><td colspan="8">No data</td></tr>';
+  Array.prototype.forEach.call(document.getElementsByClassName('gpuMuteBtn'), function (button) {
+    button.onclick = function () {
+      var gpuId = Number(button.getAttribute('data-gpu-id'));
+      var currentlyMuted = button.getAttribute('data-muted') === 'true';
+      api('/api/gpu-error-mute', 'POST', { gpu_id: gpuId, muted: !currentlyMuted }).then(refresh);
+    };
+  });
+  var processUsage = (status.sample && status.sample.process_usage) || {};
+  var processRows = (processSortKey === 'memory' ? processUsage.top_memory : processUsage.top_cpu) || [];
+  document.getElementById('processSortState').textContent = processSortKey === 'memory' ? 'Memory' : 'CPU';
+  document.getElementById('processBody').innerHTML = processRows.map(function (proc) {
+    return '<tr><td>' + proc.pid + '</td><td>' + proc.user + '</td><td>' + fmtValue(proc.cpu_percent) + '</td><td>' + fmtValue(proc.memory_percent) + '</td><td>' + fmtValue(proc.rss_mb) + '</td><td>' + proc.command + '</td><td>' + proc.args + '</td></tr>';
+  }).join('') || '<tr><td colspan="7">' + (processUsage.error || 'No data') + '</td></tr>';
+
   document.getElementById('healthBody').textContent = JSON.stringify(health, null, 2);
   document.getElementById('events').textContent = fmtEvents(status.events || []);
 }
@@ -146,6 +191,8 @@ document.getElementById('btnEnable').onclick = function () { api('/api/notify', 
 document.getElementById('btnDisable').onclick = function () { api('/api/notify', 'POST', { enabled: false }).then(refresh); };
 document.getElementById('btnTest').onclick = function () { api('/api/test-notify', 'POST', {}).then(refresh); };
 document.getElementById('btnReload').onclick = function () { api('/api/reload-config', 'POST', {}).then(refresh); };
+document.getElementById('sortCpu').onclick = function () { processSortKey = 'cpu'; refresh(); };
+document.getElementById('sortMem').onclick = function () { processSortKey = 'memory'; refresh(); };
 
 refresh();
 setInterval(refresh, 5000);
@@ -202,6 +249,20 @@ def create_app(runtime: MonitorRuntimeService) -> Flask:
         enabled = bool(payload.get("enabled", True))
         runtime.set_notify_enabled(enabled)
         return jsonify({"ok": True, "notify_enabled": enabled})
+
+    @app.post("/api/gpu-error-mute")
+    def set_gpu_error_mute() -> Any:
+        auth_error = _ensure_auth(runtime, write=True)
+        if auth_error is not None:
+            return auth_error
+        payload = request.get_json(silent=True) or {}
+        try:
+            gpu_id = int(payload["gpu_id"])
+        except (KeyError, TypeError, ValueError):
+            return jsonify({"ok": False, "error": "gpu_id is required"}), 400
+        muted = bool(payload.get("muted", True))
+        muted_gpu_error_ids = runtime.set_gpu_error_muted(gpu_id, muted)
+        return jsonify({"ok": True, "gpu_id": gpu_id, "muted": muted, "muted_gpu_error_ids": muted_gpu_error_ids})
 
     @app.post("/api/test-notify")
     def test_notify() -> Any:

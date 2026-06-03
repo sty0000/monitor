@@ -53,6 +53,12 @@ class MonitorConfig:
 
 
 @dataclass(frozen=True)
+class PlatformConfig:
+    profile: str = "auto"
+    telemetry_order: list[str] = field(default_factory=lambda: ["dcgm", "nvidia_smi"])
+
+
+@dataclass(frozen=True)
 class ThresholdConfig:
     usage_percent: float = 20
     idle_minutes: float = 10
@@ -80,10 +86,17 @@ class RuntimeErrorAlertConfig:
 
 
 @dataclass(frozen=True)
+class GpuErrorAlertConfig:
+    enabled: bool = True
+    muted_gpu_ids: list[int] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class AlertConfig:
     cooldown_minutes: float = 30
     min_interval_minutes: float = 3
     runtime_error: RuntimeErrorAlertConfig = field(default_factory=RuntimeErrorAlertConfig)
+    gpu_error: GpuErrorAlertConfig = field(default_factory=GpuErrorAlertConfig)
     recovery: RecoveryConfig = field(default_factory=RecoveryConfig)
 
 
@@ -185,6 +198,7 @@ class NotifyConfig:
 @dataclass(frozen=True)
 class AppConfig:
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
+    platform: PlatformConfig = field(default_factory=PlatformConfig)
     threshold: ThresholdConfig = field(default_factory=ThresholdConfig)
     alert: AlertConfig = field(default_factory=AlertConfig)
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
@@ -199,6 +213,10 @@ class AppConfig:
                 "interval_seconds": self.monitor.interval_seconds,
                 "command_timeout_seconds": self.monitor.command_timeout_seconds,
                 "gpu_ids": self.monitor.gpu_ids,
+            },
+            "platform": {
+                "profile": self.platform.profile,
+                "telemetry_order": self.platform.telemetry_order,
             },
             "threshold": {
                 "usage_percent": self.threshold.usage_percent,
@@ -218,6 +236,10 @@ class AppConfig:
                     "enabled": self.alert.runtime_error.enabled,
                     "consecutive_failures": self.alert.runtime_error.consecutive_failures,
                     "cooldown_minutes": self.alert.runtime_error.cooldown_minutes,
+                },
+                "gpu_error": {
+                    "enabled": self.alert.gpu_error.enabled,
+                    "muted_gpu_ids": self.alert.gpu_error.muted_gpu_ids,
                 },
                 "recovery": {
                     "enabled": self.alert.recovery.enabled,
@@ -299,6 +321,13 @@ def _validate(config: AppConfig) -> AppConfig:
         raise ConfigError("monitor.command_timeout_seconds must be > 0")
     if config.dashboard.port <= 0:
         raise ConfigError("dashboard.port must be > 0")
+    if config.platform.profile not in {"auto", "generic_nvidia", "dgx_spark"}:
+        raise ConfigError("platform.profile must be one of auto/generic_nvidia/dgx_spark")
+    if not config.platform.telemetry_order:
+        raise ConfigError("platform.telemetry_order must not be empty")
+    invalid_sources = set(config.platform.telemetry_order) - {"dcgm", "nvidia_smi"}
+    if invalid_sources:
+        raise ConfigError("platform.telemetry_order must contain only dcgm/nvidia_smi")
     if config.threshold.low_usage_mode not in {"any", "all", "majority", "selected_primary"}:
         raise ConfigError("threshold.low_usage_mode must be one of any/all/majority/selected_primary")
     if config.dashboard.auth.enabled and not config.dashboard.auth.token:
@@ -311,6 +340,7 @@ def load_config(path: Path) -> AppConfig:
         raw = yaml.safe_load(handle) or {}
 
     monitor = raw.get("monitor", {})
+    platform = raw.get("platform", {})
     threshold = raw.get("threshold", {})
     alert = raw.get("alert", {})
     dashboard = raw.get("dashboard", {})
@@ -320,6 +350,7 @@ def load_config(path: Path) -> AppConfig:
 
     recovery = alert.get("recovery", {})
     runtime_error = alert.get("runtime_error", {})
+    gpu_error = alert.get("gpu_error", {})
     dashboard_auth = dashboard.get("auth", {})
     notify_control = notify.get("control", {})
     strategy = notify.get("strategy", {})
@@ -336,6 +367,10 @@ def load_config(path: Path) -> AppConfig:
             interval_seconds=int(monitor.get("interval_seconds", 15)),
             command_timeout_seconds=int(monitor.get("command_timeout_seconds", 8)),
             gpu_ids=_parse_int_list(monitor.get("gpu_ids", [])),
+        ),
+        platform=PlatformConfig(
+            profile=str(platform.get("profile", "auto")),
+            telemetry_order=[str(item) for item in platform.get("telemetry_order", ["dcgm", "nvidia_smi"])],
         ),
         threshold=ThresholdConfig(
             usage_percent=float(threshold.get("usage_percent", 20)),
@@ -355,6 +390,10 @@ def load_config(path: Path) -> AppConfig:
                 enabled=_parse_bool(runtime_error.get("enabled", True), True),
                 consecutive_failures=int(runtime_error.get("consecutive_failures", 3)),
                 cooldown_minutes=float(runtime_error.get("cooldown_minutes", 30)),
+            ),
+            gpu_error=GpuErrorAlertConfig(
+                enabled=_parse_bool(gpu_error.get("enabled", True), True),
+                muted_gpu_ids=_parse_int_list(gpu_error.get("muted_gpu_ids", [])),
             ),
             recovery=RecoveryConfig(
                 enabled=_parse_bool(recovery.get("enabled", True), True),

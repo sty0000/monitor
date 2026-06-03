@@ -79,3 +79,17 @@ def test_state_machine_high_temperature_recovers_when_back_to_normal() -> None:
     recovered = evaluate_state(config, state, cool_sample, now=now + (config.threshold.high_temperature_minutes * 60) + 2)
     assert recovered.state_name == "WAITING_ACTIVE"
 
+
+
+def test_state_machine_gpu_error_alert_can_be_muted() -> None:
+    config = _config()
+    state = MonitorState(start_ts=time.time() - 600)
+    sample = {"gpus": [{"index": 2, "device_error": "temperature_c=[GPU requires reset]", "compute_pids": []}]}
+
+    result = evaluate_state(config, state, sample, now=time.time())
+    assert result.state_name == "GPU_ERROR_ALERT"
+    assert result.alert_key == "GPU_ERROR_ALERT"
+
+    config.alert.gpu_error.muted_gpu_ids.append(2)
+    muted_result = evaluate_state(config, state, sample, now=time.time())
+    assert muted_result.state_name == "WAITING_ACTIVE"

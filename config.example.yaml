@@ -4,6 +4,10 @@
   command_timeout_seconds: 8
   gpu_ids: []
 
+platform:
+  profile: "auto"
+  telemetry_order: ["dcgm", "nvidia_smi"]
+
 threshold:
   usage_percent: 20
   idle_minutes: 10
@@ -22,6 +26,9 @@ alert:
     enabled: true
     consecutive_failures: 3
     cooldown_minutes: 30
+  gpu_error:
+    enabled: true
+    muted_gpu_ids: []
   recovery:
     enabled: true
     cooldown_minutes: 5

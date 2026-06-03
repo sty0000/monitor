@@ -130,6 +130,8 @@ class MonitorRuntimeService:
                 "interval_seconds": self.config.monitor.interval_seconds,
                 "cooldown_minutes": self.config.alert.cooldown_minutes,
                 "min_interval_minutes": self.config.alert.min_interval_minutes,
+                "muted_gpu_error_ids": self.config.alert.gpu_error.muted_gpu_ids,
+                "platform_summary": self.latest_sample.get("platform_summary", {}),
             }
 
     def _persist_event(self, payload: dict[str, Any]) -> None:
@@ -177,6 +179,9 @@ class MonitorRuntimeService:
     def set_notify_enabled(self, enabled: bool) -> bool:
         return bool(self._submit_command("set_notify_enabled", {"enabled": enabled}))
 
+    def set_gpu_error_muted(self, gpu_id: int, muted: bool) -> list[int]:
+        return list(self._submit_command("set_gpu_error_muted", {"gpu_id": gpu_id, "muted": muted}))
+
     def reload_config(self) -> dict[str, Any]:
         return dict(self._submit_command("reload_config"))
 
@@ -222,9 +227,24 @@ class MonitorRuntimeService:
                 command.response.put(enabled)
                 return
 
+            if command.action == "set_gpu_error_muted":
+                gpu_id = int(command.payload["gpu_id"])
+                muted = bool(command.payload.get("muted", True))
+                current = set(self.config.alert.gpu_error.muted_gpu_ids)
+                if muted:
+                    current.add(gpu_id)
+                else:
+                    current.discard(gpu_id)
+                object.__setattr__(self.config.alert.gpu_error, "muted_gpu_ids", sorted(current))
+                self._append_event("control", f"gpu error alert muted={muted} gpu={gpu_id}")
+                command.response.put(self.config.alert.gpu_error.muted_gpu_ids)
+                return
+
             if command.action == "reload_config":
                 new_config = load_config(self.config_path)
                 old_enabled = self.notify_enabled
+                old_muted_gpu_error_ids = self.config.alert.gpu_error.muted_gpu_ids
+                object.__setattr__(new_config.alert.gpu_error, "muted_gpu_ids", old_muted_gpu_error_ids)
                 self.config = new_config
                 self.notification_service = build_notification_service(new_config)
                 self._event_log_path = self._resolve_path(self.config.logging.event_log_path)
@@ -351,7 +371,7 @@ class MonitorRuntimeService:
 
     def _run_cycle(self) -> None:
         now = time.time()
-        sample = self.collector.collect_sample(self.config.monitor)
+        sample = self.collector.collect_sample(self.config.monitor, self.config.platform)
         evaluation = evaluate_state(self.config, self.state, sample, now=now)
 
         self.latest_sample = sample

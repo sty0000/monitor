@@ -79,3 +79,38 @@ dashboard:
     assert config.alert.runtime_error.enabled is True
     assert config.alert.runtime_error.consecutive_failures == 5
     assert config.alert.runtime_error.cooldown_minutes == 10
+
+
+def test_load_config_reads_platform_config(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+platform:
+  profile: "dgx_spark"
+  telemetry_order: ["dcgm", "nvidia_smi"]
+dashboard:
+  auth:
+    enabled: true
+    token: "secret-token"
+""",
+        encoding="utf-8",
+    )
+    config = load_config(config_path)
+    assert config.platform.profile == "dgx_spark"
+    assert config.platform.telemetry_order == ["dcgm", "nvidia_smi"]
+
+
+def test_load_config_defaults_platform_auto(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+dashboard:
+  auth:
+    enabled: true
+    token: "secret-token"
+""",
+        encoding="utf-8",
+    )
+    config = load_config(config_path)
+    assert config.platform.profile == "auto"
+    assert config.platform.telemetry_order == ["dcgm", "nvidia_smi"]
