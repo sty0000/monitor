@@ -1,8 +1,15 @@
-﻿# GPU Training Monitor
+# GPU Training Monitor
 
 独立常驻 GPU 监控进程 + 前端控制台：查看设备运行状态并进行多渠道提醒。
 
-## Features
+## 导航
+
+- 先看：[功能特性](#功能特性)、[安装](#安装)、[配置](#配置)
+- 运行：[Dashboard 运行](#dashboard-运行)、[Dashboard API](#dashboard-api)、[命令行运行（无 UI）](#命令行运行无-ui)、[systemd](#systemd)
+- DGX Spark：[DGX Spark 系统依赖](#dgx-spark-系统依赖)、[DGX Spark 配置](#dgx-spark-配置)、[DGX Spark 说明](#dgx-spark-说明)
+- 参考：[指标](#指标)、[迁移说明](#迁移说明)、[故障排查](#故障排查)
+
+## 功能特性
 
 - `nvidia-smi` 一致性快照采样：`utilization.gpu` / `memory.used` / `power.draw` / `temperature.gpu`
 - 单写者 runtime：CLI 与 Dashboard 共用同一套状态机、通知与重载逻辑
@@ -13,9 +20,9 @@
 - 结构化日志、`/api/health`、`/metrics`、事件持久化
 - Dashboard Bearer Token 鉴权；默认仅监听 `127.0.0.1`
 
-## Install
+## 安装
 
-### Option A: Conda（推荐，适合已有 Miniconda/Anaconda 的机器）
+### 方式 A：Conda（推荐，适合已有 Miniconda/Anaconda 的机器）
 
 ```bash
 git clone https://github.com/sty0000/monitor
@@ -31,7 +38,7 @@ pip install -r requirements.txt
 - `pip install -r requirements.txt` 需要在仓库根目录执行
 - 如果你还没 `cd monitor` 就安装依赖，会报 `Could not open requirements file`
 
-### Option B: venv（适合部署到固定目录，如 `/opt/monitor`）
+### 方式 B：venv（适合部署到固定目录，如 `/opt/monitor`）
 
 ```bash
 cd /opt/monitor
@@ -41,7 +48,45 @@ pip install -U pip
 pip install -r requirements.txt
 ```
 
-## Configure
+### DGX Spark 系统依赖
+
+Monitor 适配 DGX Spark 不需要额外 Python 包；DGX 相关采集依赖系统工具：
+
+- `nvidia-smi`：随 NVIDIA 驱动 / DGX OS 软件栈提供
+- `dcgmi`：由 NVIDIA DCGM 提供，可选但推荐安装
+- `ps`：由 `procps` 提供，用于 Top Processes 进程列表
+- `/proc/meminfo`：Linux 内核接口，用于 System / Unified Memory 内存概览
+
+先检查这些工具：
+
+```bash
+which nvidia-smi
+nvidia-smi -L
+which dcgmi || echo "dcgmi not found; monitor will fall back to nvidia-smi"
+which ps
+cat /proc/meminfo | head
+```
+
+如果 DGX OS / Ubuntu 上缺少 `dcgmi`，请通过 NVIDIA 软件源安装或启用 DCGM。Ubuntu 上常见包名为：
+
+```bash
+sudo apt update
+sudo apt install -y datacenter-gpu-manager
+```
+
+部分 DGX OS 镜像已内置 DCGM，但可能需要手动启用服务：
+
+```bash
+sudo systemctl enable --now nvidia-dcgm || true
+dcgmi discovery -l
+dcgmi health -c
+```
+
+如果找不到 `datacenter-gpu-manager`，保持 `platform.telemetry_order: ["dcgm", "nvidia_smi"]` 即可；monitor 会报告 `dcgm_available=false`，并继续使用 `nvidia-smi`。建议优先使用适配你当前 OS 版本的 NVIDIA/DGX OS 软件源或 NVIDIA 官方 CUDA/DCGM 软件源。
+
+## 配置
+
+### 常规配置
 
 ```bash
 cp config.example.yaml config.yaml
@@ -62,6 +107,8 @@ vim config.yaml
 - `monitor.interval_seconds`: 采样周期
 - `monitor.instance_name`: 当前监控实例名称，会显示在通知标题和正文中
 - `monitor.command_timeout_seconds`: `nvidia-smi` 超时秒数
+- `platform.profile`: `auto` / `generic_nvidia` / `dgx_spark`
+- `platform.telemetry_order`: 采集源优先级，默认 `["dcgm", "nvidia_smi"]`
 - `threshold.low_usage_mode`: `any` / `all` / `majority` / `selected_primary`
 - `threshold.armed_stable_minutes`: 首次识别 compute 进程后的稳定窗口
 - `threshold.high_temperature_c`: 高温告警阈值，默认 `85`
@@ -72,7 +119,22 @@ vim config.yaml
 - `dashboard.auth.*`: Bearer Token 鉴权
 - `logging.event_log_path`: 事件 JSONL 持久化路径
 
-## Dashboard Run
+
+### DGX Spark 配置
+
+DGX Spark 建议使用自动平台探测，优先尝试 DCGM，失败后回退到 `nvidia-smi`：
+
+```yaml
+platform:
+  profile: "auto"
+  telemetry_order: ["dcgm", "nvidia_smi"]
+
+dashboard:
+  host: "127.0.0.1"
+  port: 8093
+```
+
+## Dashboard 运行
 
 推荐仅在本机监听：
 
@@ -96,9 +158,10 @@ python -m monitor.dashboard --config config.yaml
 - `GET /metrics`: Prometheus 指标
 - `POST /api/notify` body: `{"enabled": true|false}`
 - `POST /api/test-notify` body: `{"channel": "wecom"}`（可选）
+- `POST /api/gpu-error-mute` body: `{"gpu_id": 0, "muted": true|false}`
 - `POST /api/reload-config`: 重载 `config.yaml`
 
-### Authentication
+### 鉴权
 
 当 `dashboard.auth.enabled: true` 时，所有写接口必须携带：
 
@@ -108,7 +171,7 @@ Authorization: Bearer <token>
 
 如果 `dashboard.auth.require_auth_for_read: true`，则读接口也需要同样的 Header。
 
-## Legacy Run (No UI)
+## 命令行运行（无 UI）
 
 ```bash
 python -m monitor.agent --config config.yaml
@@ -157,6 +220,7 @@ Group=username
 - 默认模板假设项目部署在 `/opt/monitor`
 - 若 `ExecStart` 或 `WorkingDirectory` 指向不存在的路径，服务会报 `status=203/EXEC`
 - 若项目或 Python 位于 `/home/...` 下，而 service 中保留 `ProtectHome=true`，也可能导致 `203/EXEC`
+- DGX Spark/systemd 部署时，建议添加 `Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`，确保服务能找到 `nvidia-smi`、`dcgmi` 和 `ps`
 
 3. 创建环境文件:
 
@@ -188,86 +252,23 @@ journalctl -u gpu-monitor-dashboard -f
 sudo systemctl restart gpu-monitor-dashboard
 ```
 
-## DGX Spark
+## DGX Spark 说明
 
-Recommended DGX Spark settings use automatic platform detection, try DCGM first, and fall back to `nvidia-smi`:
+DGX Spark 适配行为：
 
-```yaml
-platform:
-  profile: "auto"
-  telemetry_order: ["dcgm", "nvidia_smi"]
+- `/api/status` 会返回 `platform_summary`，包含 profile、架构、OS、驱动版本、DCGM 可用性和当前采集源。
+- DGX Spark profile 下，GPU 内存列会显示为 `GPU/Unified Mem MB`。
+- Dashboard 会根据 `/proc/meminfo` 显示 `System / Unified Memory` 卡片。
+- `dcgmi` 采集是 best-effort；失败时会自动回退到 `nvidia-smi`，不会中断整轮采样。
+- 为避免与 NVIDIA DGX Dashboard 冲突，建议将本 Dashboard 绑定到自定义本地端口，例如 `8093`。
 
-dashboard:
-  host: "127.0.0.1"
-  port: 8093
-```
-
-### DGX Spark dependencies
-
-Monitor does not require extra Python packages for DGX Spark. The DGX-specific telemetry is collected from system tools:
-
-- `nvidia-smi`: installed with the NVIDIA driver / DGX OS stack
-- `dcgmi`: provided by NVIDIA DCGM; optional but recommended
-- `ps`: provided by `procps`; used for Top Processes
-- `/proc/meminfo`: Linux kernel interface used for System / Unified Memory
-
-Check the tools first:
-
-```bash
-which nvidia-smi
-nvidia-smi -L
-which dcgmi || echo "dcgmi not found; monitor will fall back to nvidia-smi"
-which ps
-cat /proc/meminfo | head
-```
-
-If `dcgmi` is missing on DGX OS / Ubuntu, install or enable DCGM with your NVIDIA package source. Common Ubuntu package names are:
-
-```bash
-sudo apt update
-sudo apt install -y datacenter-gpu-manager
-```
-
-Some DGX OS images already include DCGM but the service may need to be enabled:
-
-```bash
-sudo systemctl enable --now nvidia-dcgm || true
-dcgmi discovery -l
-dcgmi health -c
-```
-
-If `datacenter-gpu-manager` is not found, keep `platform.telemetry_order: ["dcgm", "nvidia_smi"]`; monitor will report `dcgm_available=false` and continue with `nvidia-smi`. Do not install random third-party DCGM packages. Prefer NVIDIA/DGX OS repositories or NVIDIA's official CUDA/DCGM repository for your OS version.
-
-For systemd deployments, make sure service `PATH` can find `nvidia-smi`, `dcgmi`, and `ps`:
-
-```ini
-Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-```
-
-Then reload and restart:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl restart gpu-monitor-dashboard
-```
-
-
-DGX Spark behavior:
-
-- `/api/status` includes `platform_summary` with profile, architecture, OS, driver version, DCGM availability, and active telemetry source.
-- DGX Spark profile labels GPU memory as `GPU/Unified Mem MB`.
-- Dashboard shows `System / Unified Memory` from `/proc/meminfo`.
-- `dcgmi` failures are best-effort and automatically fall back to `nvidia-smi`; sampling continues.
-- To avoid conflicts with NVIDIA DGX Dashboard, keep this dashboard on a custom local port such as `8093`.
-
-SSH tunnel example:
+SSH tunnel 示例：
 
 ```bash
 ssh -L 8093:127.0.0.1:8093 ubuntu@DGX_SPARK_HOST
 ```
 
-
-## Metrics
+## 指标
 
 默认暴露 Prometheus 指标，例如：
 
@@ -279,7 +280,7 @@ ssh -L 8093:127.0.0.1:8093 ubuntu@DGX_SPARK_HOST
 - `gpu_monitor_notify_total`
 - `gpu_monitor_collection_errors_total`
 
-## Migration Notes
+## 迁移说明
 
 旧版配置迁移要点：
 
@@ -290,7 +291,7 @@ ssh -L 8093:127.0.0.1:8093 ubuntu@DGX_SPARK_HOST
 - Dashboard 现默认启用 Bearer Token 鉴权
 - `config.yaml` 不再建议入库
 
-## Troubleshooting
+## 故障排查
 
 - `nvidia-smi not found`: 检查 NVIDIA 驱动与 PATH
 - `dashboard.auth.token is required`: 在 `config.yaml` 或环境变量中设置 Token
@@ -300,8 +301,3 @@ ssh -L 8093:127.0.0.1:8093 ubuntu@DGX_SPARK_HOST
 - `status=203/EXEC`: 重点检查 `/etc/systemd/system/gpu-monitor-dashboard.service` 中的 `WorkingDirectory`、`ExecStart` 是否真实存在且可执行
 - `status=203/EXEC` 且项目位于 `/home/...`: 检查是否仍启用了 `ProtectHome=true`；若使用 home 目录部署，请改为 `ProtectHome=false`
 - 想加高温提醒：在 `config.yaml` 的 `threshold` 下设置 `high_temperature_c` 和 `high_temperature_minutes`
-
-
-
-
-
