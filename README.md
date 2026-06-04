@@ -227,11 +227,16 @@ Group=username
 3. 创建环境文件:
 
 ```bash
-sudo tee /etc/default/gpu-monitor >/dev/null <<'EOF'
+sudo cp deploy/gpu-monitor.env.example /etc/default/gpu-monitor
+sudo nano /etc/default/gpu-monitor
+```
+
+最小内容示例：
+
+```bash
 GPU_MONITOR_NOTIFY_ENABLED=true
 GPU_MONITOR_LOW_USAGE_NOTIFY_ENABLED=true
 GPU_MONITOR_DASHBOARD_AUTH_TOKEN=CHANGE_ME_BEARER_TOKEN
-EOF
 ```
 
 4. 启动并开机自启：
@@ -294,6 +299,42 @@ ssh -L 8093:127.0.0.1:8093 ubuntu@DGX_SPARK_HOST
 - 旧版默认公网监听已改为默认本地监听
 - Dashboard 现默认启用 Bearer Token 鉴权
 - `config.yaml` 不再建议入库
+
+根据旧配置和新版 `config.example.yaml` 生成新版配置：
+
+```bash
+python -m monitor.config_migrate   --old config.yaml   --example config.example.yaml   --output config.new.yaml
+```
+
+同时合并 systemd 环境文件：
+
+```bash
+python -m monitor.config_migrate \
+  --old config.yaml \
+  --example config.example.yaml \
+  --output config.new.yaml \
+  --old-env /etc/default/gpu-monitor \
+  --env-example deploy/gpu-monitor.env.example \
+  --env-output gpu-monitor.env.new
+```
+
+确认 `config.new.yaml` 和 `gpu-monitor.env.new` 内容无误后再替换：
+
+```bash
+cp config.yaml config.yaml.bak.$(date +%Y%m%d-%H%M%S)
+mv config.new.yaml config.yaml
+sudo cp /etc/default/gpu-monitor /etc/default/gpu-monitor.bak.$(date +%Y%m%d-%H%M%S)
+sudo cp gpu-monitor.env.new /etc/default/gpu-monitor
+sudo systemctl restart gpu-monitor-dashboard
+```
+
+说明：
+
+- 旧配置中仍存在于新版 example 的键会保留旧值
+- 新版新增键会使用 `config.example.yaml` 的默认值补齐
+- 旧版已删除或无法识别的键不会写入新文件
+- 环境文件合并同样只保留新版 `deploy/gpu-monitor.env.example` 中列出的变量
+- 如需覆盖已有输出文件，可加 `--force`
 
 ## 故障排查
 
