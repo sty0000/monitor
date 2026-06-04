@@ -98,6 +98,7 @@ vim config.yaml
 - 仓库只保留 `config.example.yaml`，真实配置 `config.yaml` 已被 `.gitignore` 忽略
 - 可通过环境变量覆盖部分关键项：
   - `GPU_MONITOR_NOTIFY_ENABLED`
+  - `GPU_MONITOR_LOW_USAGE_NOTIFY_ENABLED`
   - `GPU_MONITOR_DASHBOARD_AUTH_TOKEN`
   - `GPU_MONITOR_DASHBOARD_HOST`
   - `GPU_MONITOR_DASHBOARD_PORT`
@@ -110,6 +111,7 @@ vim config.yaml
 - `platform.profile`: `auto` / `generic_nvidia` / `dgx_spark`
 - `platform.telemetry_order`: 采集源优先级，默认 `["dcgm", "nvidia_smi"]`
 - `threshold.low_usage_mode`: `any` / `all` / `majority` / `selected_primary`
+- `notify.control.low_usage_enabled`: 低利用率告警通知开关；关闭后仍保留其他告警通知
 - `threshold.armed_stable_minutes`: 首次识别 compute 进程后的稳定窗口
 - `threshold.high_temperature_c`: 高温告警阈值，默认 `85`
 - `threshold.high_temperature_minutes`: 高温持续时长，超过后触发告警
@@ -118,7 +120,6 @@ vim config.yaml
 - `alert.recovery.*`: 恢复通知策略
 - `dashboard.auth.*`: Bearer Token 鉴权
 - `logging.event_log_path`: 事件 JSONL 持久化路径
-
 
 ### DGX Spark 配置
 
@@ -157,6 +158,7 @@ python -m monitor.dashboard --config config.yaml
 - `GET /api/health`: 进程存活、最近采样、连续失败数、最近错误
 - `GET /metrics`: Prometheus 指标
 - `POST /api/notify` body: `{"enabled": true|false}`
+- `POST /api/low-usage-notify` body: `{"enabled": true|false}`
 - `POST /api/test-notify` body: `{"channel": "wecom"}`（可选）
 - `POST /api/gpu-error-mute` body: `{"gpu_id": 0, "muted": true|false}`
 - `POST /api/reload-config`: 重载 `config.yaml`
@@ -208,8 +210,8 @@ sudo nano /etc/systemd/system/gpu-monitor-dashboard.service
 
 ```ini
 [Service]
-WorkingDirectory=/home/username/path-to-proj/monitor
-ExecStart=/home/username/path-to-proj/monitor/venv/bin/python -m monitor.dashboard --config /home/username/path-to-proj/monitor/config.yaml
+WorkingDirectory=/path-to-proj/monitor
+ExecStart=/home/username/miniconda3/envs/monitor/bin/python -m monitor.dashboard --config /path-to-proj/monitor/config.yaml
 ProtectHome=false
 User=username
 Group=username
@@ -227,6 +229,7 @@ Group=username
 ```bash
 sudo tee /etc/default/gpu-monitor >/dev/null <<'EOF'
 GPU_MONITOR_NOTIFY_ENABLED=true
+GPU_MONITOR_LOW_USAGE_NOTIFY_ENABLED=true
 GPU_MONITOR_DASHBOARD_AUTH_TOKEN=CHANGE_ME_BEARER_TOKEN
 EOF
 ```
@@ -285,6 +288,7 @@ ssh -L 8093:127.0.0.1:8093 ubuntu@DGX_SPARK_HOST
 旧版配置迁移要点：
 
 - `notify.control.enabled` 仍保留
+- `notify.control.low_usage_enabled` 可单独关闭 `LOW_USAGE_ALERT` 通知
 - 建议新增 `monitor.instance_name` 区分多台机器共用同一 webhook 的消息来源
 - 新增 `dashboard` / `logging` / `metrics` 配置块
 - 旧版默认公网监听已改为默认本地监听
@@ -295,7 +299,7 @@ ssh -L 8093:127.0.0.1:8093 ubuntu@DGX_SPARK_HOST
 
 - `nvidia-smi not found`: 检查 NVIDIA 驱动与 PATH
 - `dashboard.auth.token is required`: 在 `config.yaml` 或环境变量中设置 Token
-- 无法收到告警：检查 `notify.strategy.order`、各渠道配置和服务器出网
+- 无法收到告警：检查 `notify.control.enabled`、`notify.control.low_usage_enabled`、`notify.strategy.order`、各渠道配置和服务器出网
 - 日志过多：可调高 `logging.level` 或拉长采样周期
 - `Could not open requirements file`: 先进入仓库根目录再执行 `pip install -r requirements.txt`
 - `status=203/EXEC`: 重点检查 `/etc/systemd/system/gpu-monitor-dashboard.service` 中的 `WorkingDirectory`、`ExecStart` 是否真实存在且可执行

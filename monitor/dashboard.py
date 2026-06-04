@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 from pathlib import Path
@@ -44,7 +44,7 @@ def _html_page() -> str:
 
 <div class="row">
   <div class="card"><h3>Monitor State</h3><div id="monitorState">-</div></div>
-  <div class="card"><h3>Notify</h3><div id="notifyState">-</div></div>
+  <div class="card"><h3>Notify</h3><div id="notifyState">-</div><div id="lowUsageNotifyState">-</div></div>
   <div class="card"><h3>Intervals</h3><div id="intervalState">-</div></div>
   <div class="card"><h3>Channels</h3><div id="routeState">-</div></div>
   <div class="card"><h3>Platform</h3><pre id="platformBody">-</pre></div>
@@ -54,6 +54,8 @@ def _html_page() -> str:
 <div style="margin: 16px 0;">
   <button id="btnEnable">Enable Notify</button>
   <button id="btnDisable">Disable Notify</button>
+  <button id="btnLowUsageEnable">Enable Low Usage Notify</button>
+  <button id="btnLowUsageDisable">Disable Low Usage Notify</button>
   <button id="btnTest">Send Test</button>
   <button id="btnReload">Reload Config</button>
 </div>
@@ -132,6 +134,7 @@ function render(status, health) {
   var cls = state === 'ACTIVE' ? 'ok' : ((state.indexOf('ALERT') >= 0 || state === 'ERROR') ? 'bad' : 'warn');
   document.getElementById('monitorState').innerHTML = '<span class="' + cls + '">' + state + '</span><div>' + (status.reason || '') + '</div>';
   document.getElementById('notifyState').innerHTML = status.notify_enabled ? '<span class="ok">ON</span>' : '<span class="warn">OFF</span>';
+  document.getElementById('lowUsageNotifyState').innerHTML = 'Low usage: ' + (status.low_usage_notify_enabled ? '<span class="ok">ON</span>' : '<span class="warn">OFF</span>');
   document.getElementById('intervalState').textContent = status.interval_seconds + 's / cooldown ' + status.cooldown_minutes + 'm / global ' + status.min_interval_minutes + 'm';
   document.getElementById('routeState').textContent = (status.notifier_order_active || []).join(' -> ') || '(none)';
 
@@ -189,6 +192,8 @@ document.getElementById('saveToken').onclick = function () {
 };
 document.getElementById('btnEnable').onclick = function () { api('/api/notify', 'POST', { enabled: true }).then(refresh); };
 document.getElementById('btnDisable').onclick = function () { api('/api/notify', 'POST', { enabled: false }).then(refresh); };
+document.getElementById('btnLowUsageEnable').onclick = function () { api('/api/low-usage-notify', 'POST', { enabled: true }).then(refresh); };
+document.getElementById('btnLowUsageDisable').onclick = function () { api('/api/low-usage-notify', 'POST', { enabled: false }).then(refresh); };
 document.getElementById('btnTest').onclick = function () { api('/api/test-notify', 'POST', {}).then(refresh); };
 document.getElementById('btnReload').onclick = function () { api('/api/reload-config', 'POST', {}).then(refresh); };
 document.getElementById('sortCpu').onclick = function () { processSortKey = 'cpu'; refresh(); };
@@ -249,6 +254,16 @@ def create_app(runtime: MonitorRuntimeService) -> Flask:
         enabled = bool(payload.get("enabled", True))
         runtime.set_notify_enabled(enabled)
         return jsonify({"ok": True, "notify_enabled": enabled})
+
+    @app.post("/api/low-usage-notify")
+    def set_low_usage_notify() -> Any:
+        auth_error = _ensure_auth(runtime, write=True)
+        if auth_error is not None:
+            return auth_error
+        payload = request.get_json(silent=True) or {}
+        enabled = bool(payload.get("enabled", True))
+        runtime.set_low_usage_notify_enabled(enabled)
+        return jsonify({"ok": True, "low_usage_notify_enabled": enabled})
 
     @app.post("/api/gpu-error-mute")
     def set_gpu_error_mute() -> Any:

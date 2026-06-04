@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
@@ -181,6 +181,7 @@ class NotifyStrategyConfig:
 @dataclass(frozen=True)
 class NotifyControlConfig:
     enabled: bool = True
+    low_usage_enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -263,7 +264,10 @@ class AppConfig:
             },
             "metrics": {"enabled": self.metrics.enabled},
             "notify": {
-                "control": {"enabled": self.notify.control.enabled},
+                "control": {
+                    "enabled": self.notify.control.enabled,
+                    "low_usage_enabled": self.notify.control.low_usage_enabled,
+                },
                 "strategy": {
                     "mode": self.notify.strategy.mode,
                     "order": self.notify.strategy.order,
@@ -418,7 +422,11 @@ def load_config(path: Path) -> AppConfig:
         metrics=MetricsConfig(enabled=_parse_bool(metrics.get("enabled", True), True)),
         notify=NotifyConfig(
             control=NotifyControlConfig(
-                enabled=_env_bool("GPU_MONITOR_NOTIFY_ENABLED", _parse_bool(notify_control.get("enabled", True), True))
+                enabled=_env_bool("GPU_MONITOR_NOTIFY_ENABLED", _parse_bool(notify_control.get("enabled", True), True)),
+                low_usage_enabled=_env_bool(
+                    "GPU_MONITOR_LOW_USAGE_NOTIFY_ENABLED",
+                    _parse_bool(notify_control.get("low_usage_enabled", True), True),
+                ),
             ),
             smtp=SMTPConfig(
                 enabled=_parse_bool(smtp.get("enabled", False), False),

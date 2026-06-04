@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 
 from monitor.dashboard import create_app
 from monitor.runtime_service import MonitorRuntimeService
@@ -72,6 +72,25 @@ def test_dashboard_can_mute_gpu_error_alert(tmp_path: Path) -> None:
     assert status.get_json()["muted_gpu_error_ids"] == [3]
 
 
+def test_dashboard_can_toggle_low_usage_notify(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    runtime = MonitorRuntimeService(config_path)
+    app = create_app(runtime)
+    client = app.test_client()
+
+    response = client.post(
+        "/api/low-usage-notify",
+        json={"enabled": False},
+        headers={"Authorization": "Bearer secret-token"},
+    )
+    assert response.status_code == 200
+    assert response.get_json()["low_usage_notify_enabled"] is False
+
+    status = client.get("/api/status")
+    assert status.get_json()["low_usage_notify_enabled"] is False
+
+
 def test_dashboard_contains_dgx_spark_cards(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     _write_config(config_path)
@@ -82,3 +101,4 @@ def test_dashboard_contains_dgx_spark_cards(tmp_path: Path) -> None:
     assert "System / Unified Memory" in html
     assert "gpuMemHeader" in html
     assert "Top Processes" in html
+    assert "btnLowUsageDisable" in html

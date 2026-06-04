@@ -1,4 +1,4 @@
-﻿monitor:
+monitor:
   instance_name: "gpu-monitor"
   interval_seconds: 15
   command_timeout_seconds: 8
@@ -53,6 +53,7 @@ metrics:
 notify:
   control:
     enabled: true
+    low_usage_enabled: true
 
   strategy:
     mode: "failover"

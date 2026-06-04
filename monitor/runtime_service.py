@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import logging
@@ -76,6 +76,7 @@ class MonitorRuntimeService:
         self.last_sample_ts: float | None = None
         self.consecutive_failures = 0
         self.notify_enabled = self.config.notify.control.enabled
+        self.low_usage_notify_enabled = self.config.notify.control.low_usage_enabled
         self._event_log_path = self._resolve_path(self.config.logging.event_log_path)
         self.metrics.up.set(0)
         self.metrics.notify_enabled.set(1 if self.notify_enabled else 0)
@@ -122,6 +123,7 @@ class MonitorRuntimeService:
                 "last_error": self.last_error,
                 "last_error_type": self.last_error_type,
                 "notify_enabled": self.notify_enabled,
+                "low_usage_notify_enabled": self.low_usage_notify_enabled,
                 "notifier_order_active": self.notification_service.active_channels,
                 "config_path": str(self.config_path),
                 "config_summary": self.config.redacted_summary(),
@@ -179,6 +181,9 @@ class MonitorRuntimeService:
     def set_notify_enabled(self, enabled: bool) -> bool:
         return bool(self._submit_command("set_notify_enabled", {"enabled": enabled}))
 
+    def set_low_usage_notify_enabled(self, enabled: bool) -> bool:
+        return bool(self._submit_command("set_low_usage_notify_enabled", {"enabled": enabled}))
+
     def set_gpu_error_muted(self, gpu_id: int, muted: bool) -> list[int]:
         return list(self._submit_command("set_gpu_error_muted", {"gpu_id": gpu_id, "muted": muted}))
 
@@ -227,6 +232,13 @@ class MonitorRuntimeService:
                 command.response.put(enabled)
                 return
 
+            if command.action == "set_low_usage_notify_enabled":
+                enabled = bool(command.payload["enabled"])
+                self.low_usage_notify_enabled = enabled
+                self._append_event("control", f"low usage notify enabled set to {enabled}")
+                command.response.put(enabled)
+                return
+
             if command.action == "set_gpu_error_muted":
                 gpu_id = int(command.payload["gpu_id"])
                 muted = bool(command.payload.get("muted", True))
@@ -243,12 +255,14 @@ class MonitorRuntimeService:
             if command.action == "reload_config":
                 new_config = load_config(self.config_path)
                 old_enabled = self.notify_enabled
+                old_low_usage_notify_enabled = self.low_usage_notify_enabled
                 old_muted_gpu_error_ids = self.config.alert.gpu_error.muted_gpu_ids
                 object.__setattr__(new_config.alert.gpu_error, "muted_gpu_ids", old_muted_gpu_error_ids)
                 self.config = new_config
                 self.notification_service = build_notification_service(new_config)
                 self._event_log_path = self._resolve_path(self.config.logging.event_log_path)
                 self.notify_enabled = old_enabled
+                self.low_usage_notify_enabled = old_low_usage_notify_enabled
                 self.metrics.notify_enabled.set(1 if self.notify_enabled else 0)
                 LOGGER.info("config reloaded", extra={"event_type": "config_reloaded"})
                 self._append_event("control", "config reloaded", {"config": self.config.redacted_summary()})
@@ -286,6 +300,9 @@ class MonitorRuntimeService:
         if not self.notify_enabled:
             self._append_event("notify_skip", "notify disabled by master switch", {"alert": evaluation.alert_key})
             self.state.active_alert = evaluation.alert_key
+            return
+        if evaluation.alert_key == "LOW_USAGE_ALERT" and not self.low_usage_notify_enabled:
+            self._append_event("notify_skip", "low usage notify disabled", {"alert": evaluation.alert_key})
             return
         if not should_send_with_cooldown(self.state, evaluation.alert_key, cooldown_seconds, now):
             self.state.active_alert = evaluation.alert_key
