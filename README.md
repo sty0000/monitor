@@ -90,7 +90,7 @@ dcgmi health -c
 
 ```bash
 cp config.example.yaml config.yaml
-vim config.yaml
+nano config.yaml
 ```
 
 重要说明：
@@ -300,13 +300,21 @@ ssh -L 8093:127.0.0.1:8093 ubuntu@DGX_SPARK_HOST
 - Dashboard 现默认启用 Bearer Token 鉴权
 - `config.yaml` 不再建议入库
 
-根据旧配置和新版 `config.example.yaml` 生成新版配置：
+### 自动合并配置与环境文件
+
+升级旧版本时，建议不要直接覆盖 `config.yaml` 和 `/etc/default/gpu-monitor`，而是先生成新文件、检查后再替换。
+
+1. 停止服务并更新代码：
 
 ```bash
-python -m monitor.config_migrate   --old config.yaml   --example config.example.yaml   --output config.new.yaml
+cd ~/Desktop/monitor
+sudo systemctl stop gpu-monitor-dashboard
+git pull
+conda activate monitor
+pip install -r requirements.txt
 ```
 
-同时合并 systemd 环境文件：
+2. 根据旧 `config.yaml`、新版 `config.example.yaml` 和旧环境文件生成新文件：
 
 ```bash
 python -m monitor.config_migrate \
@@ -318,14 +326,38 @@ python -m monitor.config_migrate \
   --env-output gpu-monitor.env.new
 ```
 
-确认 `config.new.yaml` 和 `gpu-monitor.env.new` 内容无误后再替换：
+如果没有 systemd 环境文件，只合并 `config.yaml` 即可：
+
+```bash
+python -m monitor.config_migrate \
+  --old config.yaml \
+  --example config.example.yaml \
+  --output config.new.yaml
+```
+
+3. 检查生成结果：
+
+```bash
+nano config.new.yaml
+nano gpu-monitor.env.new
+```
+
+4. 确认无误后备份并替换：
 
 ```bash
 cp config.yaml config.yaml.bak.$(date +%Y%m%d-%H%M%S)
 mv config.new.yaml config.yaml
 sudo cp /etc/default/gpu-monitor /etc/default/gpu-monitor.bak.$(date +%Y%m%d-%H%M%S)
 sudo cp gpu-monitor.env.new /etc/default/gpu-monitor
-sudo systemctl restart gpu-monitor-dashboard
+```
+
+5. 重启并验证：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl start gpu-monitor-dashboard
+sudo systemctl status gpu-monitor-dashboard --no-pager
+journalctl -u gpu-monitor-dashboard -n 100 --no-pager
 ```
 
 说明：
