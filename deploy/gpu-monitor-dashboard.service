@@ -8,17 +8,19 @@ Type=simple
 WorkingDirectory=/opt/monitor
 EnvironmentFile=/etc/default/gpu-monitor
 Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/opt/monitor/.venv/bin/python -m monitor.dashboard --config /opt/monitor/config.yaml
-Restart=on-failure
-RestartSec=10
-TimeoutStopSec=15
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillSignal=SIGINT
+SuccessExitStatus=143
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
-ProtectHome=true
+ProtectHome=false
 User=ubuntu
 Group=ubuntu
 
 [Install]
 WantedBy=multi-user.target
-

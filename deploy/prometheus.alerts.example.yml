@@ -1,0 +1,47 @@
+groups:
+  - name: gpu-monitor-alerts
+    rules:
+      - alert: GpuMonitorRuntimeDown
+        expr: gpu_monitor_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "GPU monitor runtime is down"
+          description: "Instance {{ $labels.instance }} has gpu_monitor_up=0."
+
+      - alert: GpuMonitorNoRecentSample
+        expr: time() - gpu_monitor_last_sample_timestamp_seconds > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU monitor has no recent sample"
+          description: "No fresh sample has been exported for more than 5 minutes."
+
+      - alert: GpuHighTemperature
+        expr: gpu_monitor_gpu_temperature_celsius >= 85
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU temperature is high"
+          description: "GPU {{ $labels.gpu }} on {{ $labels.instance }} is hot."
+
+      - alert: GpuDeviceError
+        expr: gpu_monitor_gpu_device_error > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "GPU device error detected"
+          description: "GPU {{ $labels.gpu }} reports a device error."
+
+      - alert: GpuMonitorNotifierUnhealthy
+        expr: gpu_monitor_notifier_health == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU monitor notifier unhealthy"
+          description: "Notifier {{ $labels.notifier }} is not healthy."

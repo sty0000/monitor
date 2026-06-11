@@ -1,0 +1,268 @@
+{
+  "title": "GPU Monitor Production",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "10s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Monitor Up",
+      "targets": [
+        {
+          "expr": "gpu_monitor_up"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "type": "stat",
+      "title": "State Code",
+      "targets": [
+        {
+          "expr": "gpu_monitor_state_code"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Consecutive Failures",
+      "targets": [
+        {
+          "expr": "gpu_monitor_consecutive_failures"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "type": "stat",
+      "title": "History Points",
+      "targets": [
+        {
+          "expr": "gpu_monitor_history_points"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Temporary Silences",
+      "targets": [
+        {
+          "expr": "gpu_monitor_silenced_alerts{mode=\"temporary\"}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Permanent Silences",
+      "targets": [
+        {
+          "expr": "gpu_monitor_silenced_alerts{mode=\"permanent\"}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Notifier Health",
+      "targets": [
+        {
+          "expr": "gpu_monitor_notifier_health"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "GPU Utilization %",
+      "targets": [
+        {
+          "expr": "gpu_monitor_gpu_utilization_percent"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 18,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "GPU Temperature C",
+      "targets": [
+        {
+          "expr": "gpu_monitor_gpu_temperature_celsius"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "GPU Memory Used MB",
+      "targets": [
+        {
+          "expr": "gpu_monitor_gpu_memory_used_mb"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "GPU Power W",
+      "targets": [
+        {
+          "expr": "gpu_monitor_gpu_power_draw_watts"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "GPU Device Error",
+      "targets": [
+        {
+          "expr": "gpu_monitor_gpu_device_error"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 30,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Alerts Total",
+      "targets": [
+        {
+          "expr": "gpu_monitor_alert_total"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Notify Total",
+      "targets": [
+        {
+          "expr": "gpu_monitor_notify_total"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Collection Errors",
+      "targets": [
+        {
+          "expr": "gpu_monitor_collection_errors_total"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 42,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Advanced GPU Telemetry",
+      "targets": [
+        {
+          "expr": "gpu_monitor_gpu_sm_clock_mhz",
+          "legendFormat": "GPU {{gpu}} SM clock"
+        },
+        {
+          "expr": "gpu_monitor_gpu_mem_clock_mhz",
+          "legendFormat": "GPU {{gpu}} mem clock"
+        },
+        {
+          "expr": "gpu_monitor_gpu_pcie_tx_mb_s",
+          "legendFormat": "GPU {{gpu}} PCIe TX"
+        },
+        {
+          "expr": "gpu_monitor_gpu_pcie_rx_mb_s",
+          "legendFormat": "GPU {{gpu}} PCIe RX"
+        },
+        {
+          "expr": "gpu_monitor_gpu_ecc_error_count",
+          "legendFormat": "GPU {{gpu}} ECC"
+        },
+        {
+          "expr": "gpu_monitor_gpu_xid_error_count",
+          "legendFormat": "GPU {{gpu}} XID"
+        }
+      ]
+    }
+  ]
+}

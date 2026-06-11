@@ -12,6 +12,9 @@ class ConfigError(ValueError):
     pass
 
 
+KNOWN_NOTIFY_CHANNELS = {"smtp", "webhook", "telegram", "feishu", "wecom", "dingtalk"}
+
+
 def _parse_bool(value: Any, default: bool = False) -> bool:
     if value is None:
         return default
@@ -122,8 +125,31 @@ class LoggingConfig:
 
 
 @dataclass(frozen=True)
+class HistoryConfig:
+    enabled: bool = True
+    path: str = "logs/history.jsonl"
+    max_points_memory: int = 1440
+    max_file_mb: float = 50
+    persist_interval_seconds: int = 15
+    retention_days: int = 30
+    rotate_keep_files: int = 5
+    query_default_limit: int = 240
+
+
+@dataclass(frozen=True)
 class MetricsConfig:
     enabled: bool = True
+
+
+@dataclass(frozen=True)
+class ScenarioMessagesConfig:
+    low_usage_hint: str = ""
+    no_process_hint: str = ""
+
+
+@dataclass(frozen=True)
+class HubConfig:
+    auth_token: str = ""
 
 
 @dataclass(frozen=True)
@@ -179,6 +205,27 @@ class NotifyStrategyConfig:
 
 
 @dataclass(frozen=True)
+class NotifyTemplateConfig:
+    subject: str = ""
+    body: str = ""
+    body_format: str = "plain"
+
+
+@dataclass(frozen=True)
+class AlertEscalationRuleConfig:
+    alert: str
+    after_minutes: float
+    channel: str
+    cooldown_minutes: float = 30
+
+
+@dataclass(frozen=True)
+class AlertEscalationConfig:
+    enabled: bool = False
+    rules: list[AlertEscalationRuleConfig] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class NotifyControlConfig:
     enabled: bool = True
     low_usage_enabled: bool = True
@@ -194,10 +241,13 @@ class NotifyConfig:
     wecom: WecomConfig = field(default_factory=WecomConfig)
     dingtalk: DingtalkConfig = field(default_factory=DingtalkConfig)
     strategy: NotifyStrategyConfig = field(default_factory=NotifyStrategyConfig)
+    templates: dict[str, NotifyTemplateConfig] = field(default_factory=dict)
+    escalation: AlertEscalationConfig = field(default_factory=AlertEscalationConfig)
 
 
 @dataclass(frozen=True)
 class AppConfig:
+    scenario_profile: str = "custom"
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
     platform: PlatformConfig = field(default_factory=PlatformConfig)
     threshold: ThresholdConfig = field(default_factory=ThresholdConfig)
@@ -205,10 +255,22 @@ class AppConfig:
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     metrics: MetricsConfig = field(default_factory=MetricsConfig)
+    history: HistoryConfig = field(default_factory=HistoryConfig)
+    scenario_messages: ScenarioMessagesConfig = field(default_factory=ScenarioMessagesConfig)
+    profile_templates: dict[str, Any] = field(default_factory=dict)
     notify: NotifyConfig = field(default_factory=NotifyConfig)
+
+    def warnings(self) -> list[str]:
+        warnings: list[str] = []
+        if self.dashboard.host == "0.0.0.0" and not self.dashboard.auth.enabled:
+            warnings.append("dashboard binds 0.0.0.0 with auth disabled")
+        if self.dashboard.host == "0.0.0.0" and self.dashboard.auth.enabled and not self.dashboard.auth.require_auth_for_read:
+            warnings.append("dashboard reads are public on 0.0.0.0; consider require_auth_for_read=true")
+        return warnings
 
     def redacted_summary(self) -> dict[str, Any]:
         return {
+            "scenario_profile": self.scenario_profile,
             "monitor": {
                 "instance_name": self.monitor.instance_name,
                 "interval_seconds": self.monitor.interval_seconds,
@@ -229,6 +291,10 @@ class AppConfig:
                 "armed_stable_minutes": self.threshold.armed_stable_minutes,
                 "low_usage_mode": self.threshold.low_usage_mode,
                 "primary_gpu_id": self.threshold.primary_gpu_id,
+            },
+            "scenario_messages": {
+                "low_usage_hint": self.scenario_messages.low_usage_hint,
+                "no_process_hint": self.scenario_messages.no_process_hint,
             },
             "alert": {
                 "cooldown_minutes": self.alert.cooldown_minutes,
@@ -272,6 +338,14 @@ class AppConfig:
                     "mode": self.notify.strategy.mode,
                     "order": self.notify.strategy.order,
                     "fail_on_business_error": self.notify.strategy.fail_on_business_error,
+                },
+                "templates": sorted(self.notify.templates),
+                "escalation": {
+                    "enabled": self.notify.escalation.enabled,
+                    "rules": [
+                        {"alert": rule.alert, "after_minutes": rule.after_minutes, "channel": rule.channel, "cooldown_minutes": rule.cooldown_minutes}
+                        for rule in self.notify.escalation.rules
+                    ],
                 },
                 "smtp": {
                     "enabled": self.notify.smtp.enabled,
@@ -319,6 +393,11 @@ def _parse_int_list(values: Any) -> list[int]:
 
 
 def _validate(config: AppConfig) -> AppConfig:
+    from .profile_templates import available_profile_templates
+
+    templates = available_profile_templates(config.profile_templates)
+    if config.scenario_profile not in templates:
+        raise ConfigError("unknown scenario_profile: " + config.scenario_profile + "; use a built-in profile or define it in profile_templates")
     if config.monitor.interval_seconds <= 0:
         raise ConfigError("monitor.interval_seconds must be > 0")
     if config.monitor.command_timeout_seconds <= 0:
@@ -329,13 +408,54 @@ def _validate(config: AppConfig) -> AppConfig:
         raise ConfigError("platform.profile must be one of auto/generic_nvidia/dgx_spark")
     if not config.platform.telemetry_order:
         raise ConfigError("platform.telemetry_order must not be empty")
-    invalid_sources = set(config.platform.telemetry_order) - {"dcgm", "nvidia_smi"}
+    invalid_sources = set(config.platform.telemetry_order) - {"nvml", "dcgm", "nvidia_smi"}
     if invalid_sources:
-        raise ConfigError("platform.telemetry_order must contain only dcgm/nvidia_smi")
+        raise ConfigError("platform.telemetry_order must contain only nvml/dcgm/nvidia_smi")
     if config.threshold.low_usage_mode not in {"any", "all", "majority", "selected_primary"}:
         raise ConfigError("threshold.low_usage_mode must be one of any/all/majority/selected_primary")
     if config.dashboard.auth.enabled and not config.dashboard.auth.token:
         raise ConfigError("dashboard.auth.token is required when dashboard.auth.enabled=true")
+    if not config.logging.event_log_path.strip():
+        raise ConfigError("logging.event_log_path must not be empty")
+    if not config.history.path.strip():
+        raise ConfigError("history.path must not be empty")
+    if config.alert.cooldown_minutes < 0:
+        raise ConfigError("alert.cooldown_minutes must be >= 0")
+    if config.alert.min_interval_minutes < 0:
+        raise ConfigError("alert.min_interval_minutes must be >= 0")
+    if config.alert.runtime_error.cooldown_minutes < 0:
+        raise ConfigError("alert.runtime_error.cooldown_minutes must be >= 0")
+    if config.alert.runtime_error.consecutive_failures <= 0:
+        raise ConfigError("alert.runtime_error.consecutive_failures must be > 0")
+    if config.history.max_points_memory <= 0:
+        raise ConfigError("history.max_points_memory must be > 0")
+    if config.history.max_file_mb <= 0:
+        raise ConfigError("history.max_file_mb must be > 0")
+    if config.history.persist_interval_seconds <= 0:
+        raise ConfigError("history.persist_interval_seconds must be > 0")
+    if config.history.retention_days < 0:
+        raise ConfigError("history.retention_days must be >= 0")
+    if config.history.rotate_keep_files < 0:
+        raise ConfigError("history.rotate_keep_files must be >= 0")
+    if config.history.query_default_limit <= 0:
+        raise ConfigError("history.query_default_limit must be > 0")
+    if config.notify.strategy.mode != "failover":
+        raise ConfigError("notify.strategy.mode must be failover")
+    if not config.notify.strategy.order:
+        raise ConfigError("notify.strategy.order must not be empty")
+    invalid_channels = set(config.notify.strategy.order) - KNOWN_NOTIFY_CHANNELS
+    if invalid_channels:
+        raise ConfigError("notify.strategy.order contains unknown channel(s): " + ", ".join(sorted(invalid_channels)))
+    for alert_key, template in config.notify.templates.items():
+        if template.body_format not in {"plain", "markdown"}:
+            raise ConfigError(f"notify.templates.{alert_key}.body_format must be plain or markdown")
+    for rule in config.notify.escalation.rules:
+        if rule.after_minutes < 0:
+            raise ConfigError("notify.escalation.rules.after_minutes must be >= 0")
+        if rule.cooldown_minutes < 0:
+            raise ConfigError("notify.escalation.rules.cooldown_minutes must be >= 0")
+        if rule.channel not in KNOWN_NOTIFY_CHANNELS:
+            raise ConfigError("notify.escalation.rules.channel contains unknown channel: " + rule.channel)
     return config
 
 
@@ -351,6 +471,8 @@ def load_config(path: Path) -> AppConfig:
     notify = raw.get("notify", {})
     logging_cfg = raw.get("logging", {})
     metrics = raw.get("metrics", {})
+    history = raw.get("history", {})
+    scenario_messages = raw.get("scenario_messages", {})
 
     recovery = alert.get("recovery", {})
     runtime_error = alert.get("runtime_error", {})
@@ -358,6 +480,8 @@ def load_config(path: Path) -> AppConfig:
     dashboard_auth = dashboard.get("auth", {})
     notify_control = notify.get("control", {})
     strategy = notify.get("strategy", {})
+    templates = notify.get("templates", {})
+    escalation = notify.get("escalation", {})
     smtp = notify.get("smtp", {})
     webhook = notify.get("webhook", {})
     telegram = notify.get("telegram", {})
@@ -366,6 +490,7 @@ def load_config(path: Path) -> AppConfig:
     dingtalk = notify.get("dingtalk", {})
 
     config = AppConfig(
+        scenario_profile=str(raw.get("scenario_profile", "custom")),
         monitor=MonitorConfig(
             instance_name=str(monitor.get("instance_name", "gpu-monitor")),
             interval_seconds=int(monitor.get("interval_seconds", 15)),
@@ -420,6 +545,21 @@ def load_config(path: Path) -> AppConfig:
             event_log_path=str(logging_cfg.get("event_log_path", "logs/events.jsonl")),
         ),
         metrics=MetricsConfig(enabled=_parse_bool(metrics.get("enabled", True), True)),
+        history=HistoryConfig(
+            enabled=_parse_bool(history.get("enabled", True), True),
+            path=str(history.get("path", "logs/history.jsonl")),
+            max_points_memory=int(history.get("max_points_memory", 1440)),
+            max_file_mb=float(history.get("max_file_mb", 50)),
+            persist_interval_seconds=int(history.get("persist_interval_seconds", 15)),
+            retention_days=int(history.get("retention_days", 30)),
+            rotate_keep_files=int(history.get("rotate_keep_files", 5)),
+            query_default_limit=int(history.get("query_default_limit", 240)),
+        ),
+        scenario_messages=ScenarioMessagesConfig(
+            low_usage_hint=str(scenario_messages.get("low_usage_hint", "")),
+            no_process_hint=str(scenario_messages.get("no_process_hint", "")),
+        ),
+        profile_templates=dict(raw.get("profile_templates", {}) or {}),
         notify=NotifyConfig(
             control=NotifyControlConfig(
                 enabled=_env_bool("GPU_MONITOR_NOTIFY_ENABLED", _parse_bool(notify_control.get("enabled", True), True)),
@@ -466,9 +606,27 @@ def load_config(path: Path) -> AppConfig:
                 order=[str(item) for item in strategy.get("order", ["wecom", "feishu", "dingtalk", "telegram"])],
                 fail_on_business_error=_parse_bool(strategy.get("fail_on_business_error", False), False),
             ),
+            templates={
+                str(key): NotifyTemplateConfig(
+                    subject=str(value.get("subject", "")) if isinstance(value, dict) else "",
+                    body=str(value.get("body", "")) if isinstance(value, dict) else "",
+                    body_format=str(value.get("body_format", "plain")) if isinstance(value, dict) else "plain",
+                )
+                for key, value in (templates.items() if isinstance(templates, dict) else [])
+            },
+            escalation=AlertEscalationConfig(
+                enabled=_parse_bool(escalation.get("enabled", False), False) if isinstance(escalation, dict) else False,
+                rules=[
+                    AlertEscalationRuleConfig(
+                        alert=str(rule.get("alert", "")),
+                        after_minutes=float(rule.get("after_minutes", 0)),
+                        channel=str(rule.get("channel", "")),
+                        cooldown_minutes=float(rule.get("cooldown_minutes", 30)),
+                    )
+                    for rule in (escalation.get("rules", []) if isinstance(escalation, dict) else [])
+                    if isinstance(rule, dict)
+                ],
+            ),
         ),
     )
     return _validate(config)
-
-
-

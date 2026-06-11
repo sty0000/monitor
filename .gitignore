@@ -1,3 +1,12 @@
+config.*.yaml
+!config.example.yaml
+!config.minimal.example.yaml
+gpu-monitor.env
+gpu-monitor.env.new
+gpu-monitor-dashboard.service.new
+hub.nodes.yaml
+prometheus.scrape.yml
+*.bak
 config.yaml
 logs/
 __pycache__/

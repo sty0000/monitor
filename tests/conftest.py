@@ -1,9 +1,19 @@
 from __future__ import annotations
 
-import sys
+import shutil
+import uuid
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+import pytest
 
+
+@pytest.fixture
+def tmp_path() -> Path:
+    root = Path(__file__).resolve().parents[1] / ".codex_tmp" / "pytest-tmp-path"
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / uuid.uuid4().hex
+    path.mkdir()
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)

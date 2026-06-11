@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -26,6 +27,22 @@ class NotificationService:
     def __init__(self, ordered_notifiers: list[tuple[str, Any]], fail_on_business_error: bool) -> None:
         self.ordered_notifiers = ordered_notifiers
         self.fail_on_business_error = fail_on_business_error
+        self.channel_health: dict[str, dict[str, Any]] = {name: {"status": "unknown", "last_success_ts": None, "last_error_ts": None, "last_error": "", "attempts": 0} for name, _ in ordered_notifiers}
+
+    def get_channel_health(self) -> dict[str, dict[str, Any]]:
+        return {name: dict(health) for name, health in self.channel_health.items()}
+
+    def _mark_channel(self, name: str, status: str, error: str = "") -> None:
+        health = self.channel_health.setdefault(name, {"status": "unknown", "last_success_ts": None, "last_error_ts": None, "last_error": "", "attempts": 0})
+        health["status"] = status
+        health["attempts"] = int(health.get("attempts") or 0) + 1
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        if status == "ok":
+            health["last_success_ts"] = now
+            health["last_error"] = ""
+        else:
+            health["last_error_ts"] = now
+            health["last_error"] = error
 
     @property
     def active_channels(self) -> list[str]:
@@ -48,18 +65,22 @@ class NotificationService:
             attempted.append(name)
             try:
                 notifier.send(subject, body)
+                self._mark_channel(name, "ok")
                 LOGGER.info("Notifier succeeded", extra={"event_type": "notify_sent", "notifier": name})
                 return NotificationResult(notifier=name, attempted=attempted)
             except BusinessError as exc:
                 errors.append(f"{name} business error: {exc}")
+                self._mark_channel(name, "error", str(exc))
                 LOGGER.warning("Notifier business error", extra={"event_type": "notify_business_error", "notifier": name})
                 if channel_name or not self.fail_on_business_error:
                     raise
             except NotificationError as exc:
                 errors.append(f"{name} failed: {exc}")
+                self._mark_channel(name, "error", str(exc))
                 LOGGER.warning("Notifier transport/http error", extra={"event_type": "notify_error", "notifier": name})
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"{name} unexpected error: {exc}")
+                self._mark_channel(name, "error", str(exc))
                 LOGGER.warning("Notifier unexpected error", extra={"event_type": "notify_error", "notifier": name})
         raise NotificationError("All notifiers failed: " + " | ".join(errors))
 

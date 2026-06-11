@@ -1,0 +1,23 @@
+scrape_configs:
+  - job_name: "gpu-monitor"
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - "127.0.0.1:8093"
+    # If /metrics requires Bearer auth, uncomment:
+    # authorization:
+    #   type: Bearer
+    #   credentials: monitor-your-secret-token
+
+  - job_name: "gpu-monitor-hub"
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - "127.0.0.1:8099"
+
+  - job_name: "gpu-monitor-multi-instance"
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - "gpu-box-a:8093"
+          - "gpu-box-b:8093"

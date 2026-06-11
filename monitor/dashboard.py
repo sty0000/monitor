@@ -6,8 +6,8 @@ from typing import Any
 
 from flask import Flask, Response, jsonify, request
 
-from .config import load_config
-from .logging_utils import configure_logging
+from .config import ConfigError
+from .config_edit import apply_config_update, apply_profile_update, editable_fields_payload, preview_config_update, preview_profile_update
 from .runtime_service import MonitorRuntimeService
 
 
@@ -23,6 +23,12 @@ def _html_page() -> str:
     body { font-family: sans-serif; margin: 24px; background: #0f172a; color: #e2e8f0; }
     .row { display: flex; gap: 16px; flex-wrap: wrap; }
     .card { background: #111827; border: 1px solid #334155; border-radius: 10px; padding: 16px; min-width: 260px; }
+    .status-card { flex: 1 1 220px; }
+    .wide-card { min-width: 0; width: 100%; box-sizing: border-box; }
+    .table-wrap { overflow-x: auto; }
+    details.advanced { margin-top: 16px; }
+    details.advanced > summary { cursor: pointer; color: #cbd5e1; margin-bottom: 12px; }
+    .action-bar { margin: 16px 0; }
     button { margin-right: 8px; margin-bottom: 8px; padding: 8px 12px; }
     table { border-collapse: collapse; width: 100%; }
     td, th { border: 1px solid #334155; padding: 8px; text-align: left; }
@@ -31,62 +37,110 @@ def _html_page() -> str:
     .bad { color: #ef4444; }
     pre { white-space: pre-wrap; word-break: break-word; }
     input { padding: 8px; min-width: 320px; margin-right: 8px; }
+    .chart { width: 100%; height: 180px; background: #020617; border: 1px solid #334155; border-radius: 8px; }
+    .muted { color: #94a3b8; }
+    @media (max-width: 720px) {
+      body { margin: 12px; }
+      input { min-width: 0; width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+      .card { min-width: 0; width: 100%; box-sizing: border-box; }
+      table { white-space: nowrap; }
+      button { width: 100%; }
+    }
   </style>
 </head>
 <body>
 <h1 id="pageTitle">GPU Monitor Dashboard</h1>
 <p>设备名：<strong id="instanceName">-</strong></p>
+<p>版本：<strong id="versionText">-</strong></p>
 <p>请在下方填入 Bearer Token（如果启用鉴权）。浏览器不会自动保存。</p>
 <div>
   <input id="token" type="password" placeholder="Bearer Token" />
   <button id="saveToken">应用 Token</button>
 </div>
 
-<div class="row">
-  <div class="card"><h3>Monitor State</h3><div id="monitorState">-</div></div>
-  <div class="card"><h3>Notify</h3><div id="notifyState">-</div><div id="lowUsageNotifyState">-</div></div>
-  <div class="card"><h3>Intervals</h3><div id="intervalState">-</div></div>
-  <div class="card"><h3>Channels</h3><div id="routeState">-</div></div>
-  <div class="card"><h3>Platform</h3><pre id="platformBody">-</pre></div>
-  <div class="card"><h3>System / Unified Memory</h3><div id="memoryBody">-</div></div>
+<div class="row" id="overviewRow">
+  <div class="card status-card"><h3>Monitor State</h3><div id="monitorState">-</div></div>
+  <div class="card status-card"><h3>Active Alert</h3><div id="activeAlertState">-</div></div>
+  <div class="card status-card"><h3>GPU Workload</h3><div id="gpuOverviewState">-</div></div>
+  <div class="card status-card"><h3>System / Unified Memory</h3><div id="memoryBody">-</div></div>
 </div>
 
-<div style="margin: 16px 0;">
-  <button id="btnEnable">Enable Notify</button>
-  <button id="btnDisable">Disable Notify</button>
-  <button id="btnLowUsageEnable">Enable Low Usage Notify</button>
-  <button id="btnLowUsageDisable">Disable Low Usage Notify</button>
-  <button id="btnTest">Send Test</button>
-  <button id="btnReload">Reload Config</button>
-</div>
-
-<div class="card">
+<div class="card wide-card" style="margin-top: 16px;">
   <h3>GPU Snapshot</h3>
-  <table>
-    <thead><tr><th>GPU</th><th>Util %</th><th id="gpuMemHeader">Mem MB</th><th>Power W</th><th>Temp C</th><th>PIDs</th><th>Device Error</th><th>GPU Error Alert</th></tr></thead>
-    <tbody id="gpuBody"></tbody>
-  </table>
+  <div class="muted">首屏只看 GPU 是否在工作、是否过热、是否有进程和当前告警；高级控制在下方折叠区。</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>GPU</th><th>Util %</th><th id="gpuMemHeader">Mem MB</th><th>Power W</th><th>Temp C</th><th>PIDs</th><th>Device Error</th><th>GPU Error Alert</th></tr></thead>
+      <tbody id="gpuBody"></tbody>
+    </table>
+  </div>
 </div>
 
-<div class="card" style="margin-top: 16px;">
+<div class="card wide-card" style="margin-top: 16px;">
   <h3>Top Processes</h3>
   <div style="margin-bottom: 8px;">
     <button id="sortCpu">Sort by CPU</button>
     <button id="sortMem">Sort by Memory</button>
     <span id="processSortState">CPU</span>
   </div>
-  <table>
-    <thead><tr><th>PID</th><th>User</th><th>CPU %</th><th>Mem %</th><th>RSS MB</th><th>Command</th><th>Args</th></tr></thead>
-    <tbody id="processBody"></tbody>
-  </table>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>PID</th><th>User</th><th>CPU %</th><th>Mem %</th><th>RSS MB</th><th>Command</th><th>Args</th></tr></thead>
+      <tbody id="processBody"></tbody>
+    </table>
+  </div>
 </div>
 
-<div class="card" style="margin-top: 16px;"><h3>Health</h3><pre id="healthBody">-</pre></div>
-<div class="card" style="margin-top: 16px;"><h3>Recent Events</h3><pre id="events">-</pre></div>
+<div class="card wide-card" style="margin-top: 16px;">
+  <h3>History Trend</h3>
+  <div class="muted">最近样本：GPU Util % / Temp C，告警见事件轴。</div>
+  <canvas id="historyChart" class="chart" width="900" height="180"></canvas>
+</div>
+
+<details class="advanced">
+  <summary>Advanced controls and diagnostics</summary>
+  <div class="row">
+    <div class="card"><h3>Notify</h3><div id="notifyState">-</div><div id="lowUsageNotifyState">-</div></div>
+    <div class="card"><h3>Alert Silence</h3><pre id="silenceState">-</pre></div>
+    <div class="card"><h3>Intervals</h3><div id="intervalState">-</div></div>
+    <div class="card"><h3>Channels</h3><div id="routeState">-</div></div>
+    <div class="card"><h3>Platform</h3><pre id="platformBody">-</pre></div>
+  </div>
+  <div class="action-bar">
+    <button id="btnEnable">Enable Notify</button>
+    <button id="btnDisable">Disable Notify</button>
+    <button id="btnLowUsageEnable">Enable Low Usage Notify</button>
+    <button id="btnLowUsageDisable">Disable Low Usage Notify</button>
+    <button id="btnTest">Send Test</button>
+    <button id="btnReload">Reload Config</button>
+    <button id="btnAckAlert">Ack Current Alert</button>
+    <button id="btnSilenceAlert">Silence Current Alert 1h</button>
+    <button id="btnSilenceToday">Silence Today</button>
+    <button id="btnSilencePermanent">Silence Permanent</button>
+    <button id="btnClearSilence">Clear Silence</button>
+  </div>
+  <div class="card" style="margin-top: 16px;"><h3>Alert Timeline</h3><pre id="timelineBody">-</pre></div>
+  <div class="card" style="margin-top: 16px;"><h3>Notifier Health</h3><pre id="notifierHealthBody">-</pre></div>
+  <div class="card" style="margin-top: 16px;"><h3>Health</h3><pre id="healthBody">-</pre></div>
+  <div class="card" style="margin-top: 16px;" id="configEditorCard">
+    <h3>Config Editor</h3>
+    <div class="muted">Only whitelisted low-risk fields are shown. token, host, port, notifier secrets, logging paths and systemd paths are not editable.</div>
+    <div id="configEditorFields">Loading editable fields...</div>
+    <div style="margin-top: 8px;">
+      <button id="btnConfigPreview">Preview Config Change</button>
+      <button id="btnConfigApply" disabled>Apply Previewed Change</button>
+    </div>
+    <div class="muted" id="configApplyHint">Preview must pass before apply. Apply creates a backup and reloads config.</div>
+    <pre id="configPreviewBody">-</pre>
+  </div>
+  <div class="card" style="margin-top: 16px;"><h3>Recent Events</h3><pre id="events">-</pre></div>
+</details>
 
 <script>
 var bearerToken = '';
 var processSortKey = 'cpu';
+var editableConfigFields = [];
+var lastConfigPreviewOk = false;
 
 function buildHeaders() {
   var headers = { 'Content-Type': 'application/json' };
@@ -125,18 +179,178 @@ function fmtEvents(events) {
   }).join('\\n\\n');
 }
 
-function render(status, health) {
+
+function drawHistory(history) {
+  var canvas = document.getElementById('historyChart');
+  if (!canvas) { return; }
+  var ctx = canvas.getContext('2d');
+  var width = canvas.width;
+  var height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#020617';
+  ctx.fillRect(0, 0, width, height);
+  var points = (history && history.points) || [];
+  if (!points.length) {
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText('No history yet', 16, 24);
+    return;
+  }
+  ctx.strokeStyle = '#334155';
+  ctx.lineWidth = 1;
+  [0.25, 0.5, 0.75].forEach(function (ratio) {
+    var y = height * ratio;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  });
+  function series(gpuIndex, key) {
+    return points.map(function (point, i) {
+      var gpu = ((point.gpus || []).filter(function (item) { return item.index === gpuIndex; })[0]) || {};
+      var value = gpu[key];
+      if (value === null || value === undefined) { return null; }
+      return { x: points.length === 1 ? 0 : (i / (points.length - 1)) * width, y: height - Math.max(0, Math.min(100, Number(value))) / 100 * height };
+    });
+  }
+  var firstGpu = (((points[points.length - 1] || {}).gpus || [])[0] || {}).index;
+  if (firstGpu === undefined) {
+    return;
+  }
+  [
+    { key: 'utilization_gpu', color: '#38bdf8', label: 'Util %' },
+    { key: 'temperature_c', color: '#f97316', label: 'Temp C' },
+  ].forEach(function (spec) {
+    var data = series(firstGpu, spec.key);
+    ctx.strokeStyle = spec.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    var started = false;
+    data.forEach(function (point) {
+      if (!point) { return; }
+      if (!started) { ctx.moveTo(point.x, point.y); started = true; }
+      else { ctx.lineTo(point.x, point.y); }
+    });
+    if (started) { ctx.stroke(); }
+  });
+  ctx.fillStyle = '#38bdf8';
+  ctx.fillText('Util %', 12, 18);
+  ctx.fillStyle = '#f97316';
+  ctx.fillText('Temp C', 72, 18);
+}
+
+function renderTimeline(history) {
+  var events = ((history && history.events) || []).filter(function (event) {
+    return event.kind === 'notify_sent' || event.kind === 'error' || event.kind === 'system';
+  }).slice(0, 20);
+  document.getElementById('timelineBody').textContent = events.map(function (event) {
+    return '[' + event.ts + '] ' + event.kind + ': ' + event.message;
+  }).join('\n') || '-';
+}
+
+function parseConfigValue(raw, typeName) {
+  if (typeName === 'boolean') {
+    return raw === true || raw === 'true';
+  }
+  if (typeName === 'integer') {
+    return parseInt(raw, 10);
+  }
+  if (typeName === 'integer|null') {
+    return raw === '' || raw === 'null' ? null : parseInt(raw, 10);
+  }
+  if (typeName === 'number') {
+    return Number(raw);
+  }
+  if (typeName === 'list[string]') {
+    return raw.split(',').map(function (item) { return item.trim(); }).filter(Boolean);
+  }
+  return raw;
+}
+
+function controlForField(field) {
+  var id = 'configField_' + field.path.replace(/[^a-zA-Z0-9]/g, '_');
+  var label = '<label for="' + id + '"><strong>' + field.path + '</strong><br><span class="muted">' + field.description + '</span></label>';
+  if (field.type === 'boolean') {
+    return '<div><input id="' + id + '" data-config-path="' + field.path + '" data-config-type="' + field.type + '" type="checkbox" /> ' + label + '</div>';
+  }
+  if (field.type === 'enum') {
+    return '<div>' + label + '<br><select id="' + id + '" data-config-path="' + field.path + '" data-config-type="' + field.type + '"><option value="any">any</option><option value="all">all</option><option value="majority">majority</option><option value="selected_primary">selected_primary</option></select></div>';
+  }
+  var inputType = field.type === 'number' || field.type === 'integer' || field.type === 'integer|null' ? 'number' : 'text';
+  var placeholder = field.type === 'list[string]' ? 'wecom,telegram' : field.type;
+  return '<div>' + label + '<br><input id="' + id + '" data-config-path="' + field.path + '" data-config-type="' + field.type + '" type="' + inputType + '" placeholder="' + placeholder + '" /></div>';
+}
+
+function loadConfigEditor() {
+  api('/api/config/editable').then(function (payload) {
+    editableConfigFields = payload.fields || [];
+    document.getElementById('configEditorFields').innerHTML = editableConfigFields.map(controlForField).join('') || 'No editable fields';
+  }).catch(function (err) {
+    document.getElementById('configEditorFields').textContent = 'Load editable fields failed: ' + err.message;
+  });
+}
+
+function collectConfigUpdates() {
+  var updates = {};
+  Array.prototype.forEach.call(document.querySelectorAll('[data-config-path]'), function (input) {
+    var path = input.getAttribute('data-config-path');
+    var typeName = input.getAttribute('data-config-type');
+    var raw = input.type === 'checkbox' ? input.checked : input.value;
+    if (input.type !== 'checkbox' && String(raw).trim() === '') { return; }
+    updates[path] = parseConfigValue(raw, typeName);
+  });
+  return updates;
+}
+
+function previewConfigChange() {
+  lastConfigPreviewOk = false;
+  document.getElementById('btnConfigApply').disabled = true;
+  var updates = collectConfigUpdates();
+  api('/api/config/preview', 'POST', { updates: updates }).then(function (payload) {
+    lastConfigPreviewOk = !!payload.ok;
+    document.getElementById('btnConfigApply').disabled = !lastConfigPreviewOk;
+    document.getElementById('configPreviewBody').textContent = JSON.stringify(payload.changes || [], null, 2) + '\n\nvalidation:\n' + JSON.stringify(payload.validation || {}, null, 2) + '\n\ndiff:\n' + (payload.diff || '');
+  }).catch(function (err) {
+    document.getElementById('configPreviewBody').textContent = 'Preview failed; apply is disabled.\n' + err.message;
+  });
+}
+
+function applyConfigChange() {
+  if (!lastConfigPreviewOk) {
+    document.getElementById('configPreviewBody').textContent = 'Preview must pass before apply.';
+    return;
+  }
+  if (!window.confirm('Apply previewed config change? A backup will be created before reload.')) {
+    return;
+  }
+  api('/api/config/apply', 'POST', { updates: collectConfigUpdates() }).then(function (payload) {
+    lastConfigPreviewOk = false;
+    document.getElementById('btnConfigApply').disabled = true;
+    document.getElementById('configPreviewBody').textContent = 'Apply result:\n' + JSON.stringify(payload, null, 2) + '\n\nbackup_path: ' + (payload.backup_path || '-');
+    return refresh();
+  }).catch(function (err) {
+    lastConfigPreviewOk = false;
+    document.getElementById('btnConfigApply').disabled = true;
+    document.getElementById('configPreviewBody').textContent = 'Apply failed. If reload failed, backend reports rolled_back=true.\n' + err.message;
+  });
+}
+
+function render(status, health, history) {
   var instanceName = ((status.config_summary || {}).monitor || {}).instance_name || '-';
   document.getElementById('instanceName').textContent = instanceName;
   document.getElementById('pageTitle').textContent = 'GPU Monitor Dashboard - ' + instanceName;
+  document.getElementById('versionText').textContent = status.version || '-';
   document.title = 'GPU Monitor Dashboard - ' + instanceName;
   var state = status.monitor_state || '-';
   var cls = state === 'ACTIVE' ? 'ok' : ((state.indexOf('ALERT') >= 0 || state === 'ERROR') ? 'bad' : 'warn');
   document.getElementById('monitorState').innerHTML = '<span class="' + cls + '">' + state + '</span><div>' + (status.reason || '') + '</div>';
+  var activeAlert = status.active_alert || (state.indexOf('ALERT') >= 0 ? state : 'None');
+  var activeAlertClass = activeAlert === 'None' ? 'ok' : 'bad';
+  document.getElementById('activeAlertState').innerHTML = '<span class="' + activeAlertClass + '">' + activeAlert + '</span>';
   document.getElementById('notifyState').innerHTML = status.notify_enabled ? '<span class="ok">ON</span>' : '<span class="warn">OFF</span>';
   document.getElementById('lowUsageNotifyState').innerHTML = 'Low usage: ' + (status.low_usage_notify_enabled ? '<span class="ok">ON</span>' : '<span class="warn">OFF</span>');
   document.getElementById('intervalState').textContent = status.interval_seconds + 's / cooldown ' + status.cooldown_minutes + 'm / global ' + status.min_interval_minutes + 'm';
   document.getElementById('routeState').textContent = (status.notifier_order_active || []).join(' -> ') || '(none)';
+  document.getElementById('silenceState').textContent = 'Ack: ' + JSON.stringify(status.acknowledged_alerts || []) + '\nTemp: ' + JSON.stringify(status.silenced_alerts_until || {}) + '\nPermanent: ' + JSON.stringify(status.silenced_alerts_permanent || []);
 
   var platformSummary = status.platform_summary || {};
   var systemMemory = (status.sample && status.sample.system_memory) || {};
@@ -158,6 +372,12 @@ function render(status, health) {
     return '<tr><td>' + gpu.index + '</td><td>' + fmtValue(gpu.utilization_gpu) + '</td><td>' + fmtValue(gpu.memory_used_mb) + '</td><td>' + fmtValue(gpu.power_draw_w) + '</td><td>' + fmtValue(gpu.temperature_c) + '</td><td>' + ((gpu.compute_pids || []).join(',')) + '</td><td class="' + (errorText ? 'bad' : 'ok') + '">' + (errorText || 'OK') + '</td><td>' + button + '</td></tr>';
   }).join('');
   document.getElementById('gpuBody').innerHTML = rows || '<tr><td colspan="8">No data</td></tr>';
+  var busyCount = gpus.filter(function (gpu) { return Number(gpu.utilization_gpu || 0) > 0; }).length;
+  var hotCount = gpus.filter(function (gpu) { return Number(gpu.temperature_c || 0) >= 80; }).length;
+  var processCount = gpus.reduce(function (total, gpu) { return total + ((gpu.compute_pids || []).length); }, 0);
+  document.getElementById('gpuOverviewState').innerHTML = gpus.length
+    ? (busyCount + '/' + gpus.length + ' busy, ' + hotCount + ' hot, ' + processCount + ' GPU process pid(s)')
+    : 'No GPU data';
   Array.prototype.forEach.call(document.getElementsByClassName('gpuMuteBtn'), function (button) {
     button.onclick = function () {
       var gpuId = Number(button.getAttribute('data-gpu-id'));
@@ -172,14 +392,17 @@ function render(status, health) {
     return '<tr><td>' + proc.pid + '</td><td>' + proc.user + '</td><td>' + fmtValue(proc.cpu_percent) + '</td><td>' + fmtValue(proc.memory_percent) + '</td><td>' + fmtValue(proc.rss_mb) + '</td><td>' + proc.command + '</td><td>' + proc.args + '</td></tr>';
   }).join('') || '<tr><td colspan="7">' + (processUsage.error || 'No data') + '</td></tr>';
 
+  document.getElementById('notifierHealthBody').textContent = JSON.stringify(status.notifier_health || {}, null, 2);
   document.getElementById('healthBody').textContent = JSON.stringify(health, null, 2);
   document.getElementById('events').textContent = fmtEvents(status.events || []);
+  drawHistory(history);
+  renderTimeline(history);
 }
 
 function refresh() {
-  return Promise.all([api('/api/status'), api('/api/health')])
+  return Promise.all([api('/api/status'), api('/api/health'), api('/api/history?limit=240')])
     .then(function (results) {
-      render(results[0], results[1]);
+      render(results[0], results[1], results[2]);
     })
     .catch(function (err) {
       document.getElementById('events').textContent = '拉取状态失败: ' + err.message;
@@ -196,9 +419,17 @@ document.getElementById('btnLowUsageEnable').onclick = function () { api('/api/l
 document.getElementById('btnLowUsageDisable').onclick = function () { api('/api/low-usage-notify', 'POST', { enabled: false }).then(refresh); };
 document.getElementById('btnTest').onclick = function () { api('/api/test-notify', 'POST', {}).then(refresh); };
 document.getElementById('btnReload').onclick = function () { api('/api/reload-config', 'POST', {}).then(refresh); };
+document.getElementById('btnAckAlert').onclick = function () { api('/api/acknowledge-alert', 'POST', {}).then(refresh); };
+document.getElementById('btnSilenceAlert').onclick = function () { api('/api/alert-silence', 'POST', { mode: '1h' }).then(refresh); };
+document.getElementById('btnSilenceToday').onclick = function () { api('/api/alert-silence', 'POST', { mode: 'today' }).then(refresh); };
+document.getElementById('btnSilencePermanent').onclick = function () { api('/api/alert-silence', 'POST', { mode: 'permanent' }).then(refresh); };
+document.getElementById('btnClearSilence').onclick = function () { api('/api/alert-silence', 'POST', { mode: 'clear' }).then(refresh); };
 document.getElementById('sortCpu').onclick = function () { processSortKey = 'cpu'; refresh(); };
 document.getElementById('sortMem').onclick = function () { processSortKey = 'memory'; refresh(); };
+document.getElementById('btnConfigPreview').onclick = previewConfigChange;
+document.getElementById('btnConfigApply').onclick = applyConfigChange;
 
+loadConfigEditor();
 refresh();
 setInterval(refresh, 5000);
 </script>
@@ -230,6 +461,40 @@ def create_app(runtime: MonitorRuntimeService) -> Flask:
         if auth_error is not None:
             return auth_error
         return jsonify(runtime.get_status())
+
+
+    @app.get("/api/history")
+    def history() -> Any:
+        auth_error = _ensure_auth(runtime, write=False)
+        if auth_error is not None:
+            return auth_error
+        try:
+            limit = int(request.args.get("limit", str(runtime.config.history.query_default_limit)))
+        except ValueError:
+            limit = runtime.config.history.query_default_limit
+        try:
+            gpu = int(request.args["gpu"]) if "gpu" in request.args else None
+        except ValueError:
+            return jsonify({"ok": False, "error": "gpu must be an integer"}), 400
+        try:
+            bucket_seconds = int(request.args["bucket"]) if "bucket" in request.args else None
+        except ValueError:
+            return jsonify({"ok": False, "error": "bucket must be an integer number of seconds"}), 400
+        since = request.args.get("since", request.args.get("from", ""))
+        try:
+            return jsonify(
+                runtime.get_history(
+                    limit=limit,
+                    since=since,
+                    gpu=gpu,
+                    state=request.args.get("state", ""),
+                    bucket_seconds=bucket_seconds,
+                    metric=request.args.get("metric", "utilization_gpu"),
+                    agg=request.args.get("agg", "avg"),
+                )
+            )
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
 
     @app.get("/api/health")
     def health() -> Any:
@@ -291,6 +556,27 @@ def create_app(runtime: MonitorRuntimeService) -> Flask:
         except Exception as exc:  # noqa: BLE001
             return jsonify({"ok": False, "error": str(exc)}), 500
 
+
+    @app.post("/api/acknowledge-alert")
+    def acknowledge_alert() -> Any:
+        auth_error = _ensure_auth(runtime, write=True)
+        if auth_error is not None:
+            return auth_error
+        payload = request.get_json(silent=True) or {}
+        alert_key = str(payload.get("alert_key") or "")
+        silence_minutes = float(payload.get("silence_minutes") or 0)
+        return jsonify(runtime.acknowledge_alert(alert_key=alert_key, silence_minutes=silence_minutes))
+
+    @app.post("/api/alert-silence")
+    def alert_silence() -> Any:
+        auth_error = _ensure_auth(runtime, write=True)
+        if auth_error is not None:
+            return auth_error
+        payload = request.get_json(silent=True) or {}
+        alert_key = str(payload.get("alert_key") or "")
+        mode = str(payload.get("mode") or "")
+        return jsonify(runtime.silence_alert(alert_key=alert_key, mode=mode))
+
     @app.post("/api/reload-config")
     def reload_config() -> Any:
         auth_error = _ensure_auth(runtime, write=True)
@@ -298,6 +584,61 @@ def create_app(runtime: MonitorRuntimeService) -> Flask:
             return auth_error
         result = runtime.reload_config()
         return jsonify(result)
+
+    @app.get("/api/config/editable")
+    def config_editable() -> Any:
+        auth_error = _ensure_auth(runtime, write=True)
+        if auth_error is not None:
+            return auth_error
+        return jsonify(editable_fields_payload())
+
+    @app.post("/api/config/preview")
+    def config_preview() -> Any:
+        auth_error = _ensure_auth(runtime, write=True)
+        if auth_error is not None:
+            return auth_error
+        payload = request.get_json(silent=True) or {}
+        try:
+            result = preview_config_update(runtime.config_path, payload)
+        except ConfigError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(result), 200 if result.get("ok") else 400
+
+    @app.post("/api/config/apply")
+    def config_apply() -> Any:
+        auth_error = _ensure_auth(runtime, write=True)
+        if auth_error is not None:
+            return auth_error
+        payload = request.get_json(silent=True) or {}
+        try:
+            result = apply_config_update(runtime.config_path, payload, runtime.reload_config)
+        except ConfigError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(result), 200 if result.get("ok") else 400
+
+    @app.post("/api/config/profile-preview")
+    def config_profile_preview() -> Any:
+        auth_error = _ensure_auth(runtime, write=True)
+        if auth_error is not None:
+            return auth_error
+        payload = request.get_json(silent=True) or {}
+        try:
+            result = preview_profile_update(runtime.config_path, str(payload.get("profile") or ""))
+        except ConfigError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(result), 200 if result.get("ok") else 400
+
+    @app.post("/api/config/profile-apply")
+    def config_profile_apply() -> Any:
+        auth_error = _ensure_auth(runtime, write=True)
+        if auth_error is not None:
+            return auth_error
+        payload = request.get_json(silent=True) or {}
+        try:
+            result = apply_profile_update(runtime.config_path, str(payload.get("profile") or ""), runtime.reload_config)
+        except ConfigError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(result), 200 if result.get("ok") else 400
 
     return app
 
@@ -311,23 +652,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    from .service import run_dashboard
+
     args = parse_args()
-    config = load_config(args.config)
-    configure_logging(config.logging)
-    runtime = MonitorRuntimeService(args.config)
-    runtime.start()
-    app = create_app(runtime)
-    host = args.host or config.dashboard.host
-    port = args.port or config.dashboard.port
-    try:
-        app.run(host=host, port=port, debug=False)
-    finally:
-        runtime.stop()
-    return 0
+    return run_dashboard(args.config, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-

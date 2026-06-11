@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
@@ -22,6 +22,7 @@ class MonitorState:
     no_process_since: float | None = None
     high_temperature_since: dict[int, float] = field(default_factory=dict)
     active_alert: str | None = None
+    alert_first_seen_at: dict[str, float] = field(default_factory=dict)
     last_alert_sent_at: dict[str, float] = field(default_factory=dict)
     last_any_alert_sent_at: float | None = None
 
@@ -211,9 +212,36 @@ def evaluate_state(config: AppConfig, state: MonitorState, sample: dict[str, Any
     return EvaluationResult("ACTIVE", None, "healthy")
 
 
-def build_alert_message(instance_name: str, alert_key: str, sample: dict[str, Any], reason: str) -> tuple[str, str]:
+def _scenario_hint(alert_key: str, scenario_profile: str) -> str:
+    profile = scenario_profile.strip().lower()
+    if alert_key == "LOW_USAGE_ALERT":
+        if profile == "training":
+            return "training hint: utilization stayed low; check whether training is stuck, data loading is blocked, or the job is waiting unexpectedly."
+        if profile == "inference":
+            return "inference hint: low utilization may be normal when traffic is low or the service is idle; check request rate before treating this as a failure."
+        return "hint: utilization stayed below threshold; inspect workload, traffic and process state."
+    if alert_key == "NO_PROCESS_ALERT":
+        if profile == "training":
+            return "training hint: no compute process is visible; check whether the training process exited, crashed, or failed to start."
+        if profile == "inference":
+            return "inference hint: no compute process is visible; check whether the serving process is still running, even if low traffic is expected."
+        return "hint: no compute process is visible; inspect workload process state."
+    return ""
+
+
+def build_alert_message(instance_name: str, alert_key: str, sample: dict[str, Any], reason: str, scenario_profile: str = "custom", scenario_messages: dict[str, str] | None = None) -> tuple[str, str]:
     title = f"[GPU Monitor][{instance_name}] {alert_key}"
-    lines = [f"monitor: {instance_name}", f"time(utc): {sample['timestamp']}", f"alert: {alert_key}", f"reason: {reason}", "", "gpu snapshot:"]
+    lines = [f"monitor: {instance_name}", f"time(utc): {sample['timestamp']}", f"alert: {alert_key}", f"scenario_profile: {scenario_profile}", f"reason: {reason}"]
+    messages = scenario_messages or {}
+    if alert_key == "LOW_USAGE_ALERT" and messages.get("low_usage_hint"):
+        hint = messages["low_usage_hint"]
+    elif alert_key == "NO_PROCESS_ALERT" and messages.get("no_process_hint"):
+        hint = messages["no_process_hint"]
+    else:
+        hint = _scenario_hint(alert_key, scenario_profile)
+    if hint:
+        lines.append(hint)
+    lines.extend(["", "gpu snapshot:"])
     for gpu in sample.get("gpus", []):
         error_text = gpu.get("device_error") or "OK"
         lines.append(

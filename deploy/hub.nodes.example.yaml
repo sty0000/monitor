@@ -1,0 +1,12 @@
+hub:
+  auth_token: monitor-hub-readonly-token
+
+nodes:
+  - name: gpu-5090
+    base_url: http://127.0.0.1:8093
+    token: monitor-your-secret-token
+    timeout_seconds: 3
+  - name: dgx-spark
+    base_url: http://127.0.0.1:8094
+    token: monitor-your-secret-token
+    timeout_seconds: 3

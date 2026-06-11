@@ -1,0 +1,15 @@
+groups:
+  - name: gpu-monitor-recording
+    interval: 30s
+    rules:
+      - record: gpu_monitor:gpu_utilization_avg5m
+        expr: avg_over_time(gpu_monitor_gpu_utilization_percent[5m])
+
+      - record: gpu_monitor:gpu_temperature_max5m
+        expr: max_over_time(gpu_monitor_gpu_temperature_celsius[5m])
+
+      - record: gpu_monitor:instance_error_count
+        expr: sum by (instance) (gpu_monitor_collector_error)
+
+      - record: gpu_monitor:notifier_unhealthy_count
+        expr: sum by (instance) (gpu_monitor_notifier_health == 0)

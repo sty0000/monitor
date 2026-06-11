@@ -3,15 +3,15 @@ scenario_messages:
   low_usage_hint: ""
   no_process_hint: ""
 
+# Minimal config for a lightweight training/inference GPU monitor.
+# Copy to config.yaml, set dashboard.auth.token, then run:
+#   python -m monitor.dashboard --config config.yaml
+
 monitor:
-  instance_name: "gpu-monitor"
+  instance_name: "gpu-node"
   interval_seconds: 15
   command_timeout_seconds: 8
   gpu_ids: []
-
-platform:
-  profile: "auto"
-  telemetry_order: ["dcgm", "nvidia_smi"]  # optional: ["nvml", "dcgm", "nvidia_smi"]
 
 threshold:
   usage_percent: 20
@@ -22,7 +22,6 @@ threshold:
   warmup_minutes: 3
   armed_stable_minutes: 1
   low_usage_mode: "any"
-  primary_gpu_id: null
 
 alert:
   cooldown_minutes: 30
@@ -49,7 +48,7 @@ dashboard:
 
 logging:
   level: "INFO"
-  structured: true
+  structured: false
   event_log_path: "logs/events.jsonl"
 
 metrics:
@@ -58,42 +57,39 @@ metrics:
 history:
   enabled: true
   path: "logs/history.jsonl"
-  max_points_memory: 1440
-  max_file_mb: 50
-  persist_interval_seconds: 15
-  retention_days: 30
-  rotate_keep_files: 5
-  query_default_limit: 240
-
-hub:
-  auth_token: ""
+  max_points_memory: 720
+  max_file_mb: 20
+  persist_interval_seconds: 30
+  retention_days: 7
+  rotate_keep_files: 3
+  query_default_limit: 120
 
 notify:
   control:
-    enabled: true
+    enabled: false
     low_usage_enabled: true
-
   strategy:
     mode: "failover"
     order: ["wecom", "feishu", "dingtalk", "telegram", "webhook", "smtp"]
     fail_on_business_error: false
-
-  templates:
-    HIGH_TEMPERATURE_ALERT:
-      subject: "[GPU Monitor][{instance}] High Temperature"
-      body_format: "markdown"
-    HIGH_TEMPERATURE_RECOVERED:
-      subject: "[GPU Monitor][{instance}] Temperature Recovered"
-      body_format: "markdown"
-
-  escalation:
+  webhook:
     enabled: false
-    rules:
-      - alert: HIGH_TEMPERATURE_ALERT
-        after_minutes: 10
-        channel: telegram
-        cooldown_minutes: 30
-
+    url: "https://example.com/webhook"
+  wecom:
+    enabled: false
+    webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=REPLACE_ME"
+  feishu:
+    enabled: false
+    webhook_url: "https://open.feishu.cn/open-apis/bot/v2/hook/REPLACE_ME"
+  dingtalk:
+    enabled: false
+    webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_ME"
+    secret: ""
+  telegram:
+    enabled: false
+    bot_token: "123456:ABCDEF_REPLACE_ME"
+    chat_id: "-1001234567890"
+    api_base: "https://api.telegram.org"
   smtp:
     enabled: false
     host: "smtp.example.com"
@@ -101,31 +97,5 @@ notify:
     user: "you@example.com"
     password: "REPLACE_WITH_APP_PASSWORD"
     from: "you@example.com"
-    to:
-      - "you@example.com"
+    to: ["you@example.com"]
     use_tls: false
-
-  webhook:
-    enabled: false
-    url: "https://example.com/webhook"
-
-  wecom:
-    enabled: true
-    webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=REPLACE_ME"
-
-  feishu:
-    enabled: false
-    webhook_url: "https://open.feishu.cn/open-apis/bot/v2/hook/REPLACE_ME"
-
-  dingtalk:
-    enabled: false
-    webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_ME"
-    secret: ""
-
-  telegram:
-    enabled: false
-    bot_token: "123456:ABCDEF_REPLACE_ME"
-    chat_id: "-1001234567890"
-    api_base: "https://api.telegram.org"
-
-
