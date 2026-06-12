@@ -153,7 +153,7 @@ function buildHeaders() {
 
 
 function setControlResult(message, payload) {
-  var detail = payload === undefined ? '' : '\n' + JSON.stringify(payload, null, 2);
+  var detail = payload === undefined ? '' : '\\n' + JSON.stringify(payload, null, 2);
   document.getElementById('controlResult').textContent = message + detail;
 }
 

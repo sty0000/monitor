@@ -174,6 +174,7 @@ def test_dashboard_inline_script_escapes_newlines(tmp_path: Path) -> None:
     assert "Apply result:\\n" in html
     assert "rolled_back=true.\\n" in html
     assert "Ack: " in html and "\\nTemp: " in html and "\\nPermanent: " in html
+    assert "payload === undefined ? '' : '\\n'" in html
 
 def test_dashboard_first_screen_prioritizes_status_and_readonly_tables(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
