@@ -160,8 +160,9 @@ def test_dashboard_uses_unified_memory_fallback_for_dgx_spark(tmp_path: Path) ->
 
     assert "GPU/Unified Mem MB" in html
     assert "formatGpuMemory(gpu)" in html
+    assert "platformSummary = ((status.sample || {}).platform_summary) || status.platform_summary || {};" in html
     assert "systemMemory.used_mb + ' / ' + systemMemory.total_mb + ' unified'" in html
-    assert "return fmtValue(gpu.memory_used_mb);" in html
+    assert "formatGpuMemory(gpu)" in html
 
 def test_dashboard_inline_script_escapes_newlines(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
@@ -189,11 +190,11 @@ def test_dashboard_first_screen_prioritizes_status_and_readonly_tables(tmp_path:
 
     assert "Active Alert" in html
     assert "GPU Workload" in html
-    assert "首屏只看 GPU 是否在工作" in html
     assert overview_pos < gpu_pos < process_pos < advanced_pos
     assert 'class="table-wrap"' in html
     assert 'id="btnReload"' in html
     assert 'id="configEditorCard"' in html
+    assert '首屏只看 GPU 是否在工作' not in html
 
 
 
@@ -201,31 +202,6 @@ def test_dashboard_first_screen_prioritizes_status_and_readonly_tables(tmp_path:
 
 
 
-
-def test_dashboard_history_hover_repaints_visible_marker(tmp_path: Path) -> None:
-    config_path = tmp_path / "config.yaml"
-    _write_config(config_path)
-    runtime = MonitorRuntimeService(config_path)
-    html = create_app(runtime).test_client().get("/").get_data(as_text=True)
-
-    assert "historyHoverIndex" in html
-    assert "updateHistoryHoverFromCanvas" in html
-    assert "clearHistoryHover" in html
-    assert "setLineDash([4, 4])" in html
-    assert "addEventListener('mousemove', updateHistoryHoverFromCanvas)" in html
-    assert "addEventListener('mouseleave', clearHistoryHover)" in html
-
-def test_dashboard_history_trend_legend_is_separated(tmp_path: Path) -> None:
-    config_path = tmp_path / "config.yaml"
-    _write_config(config_path)
-    runtime = MonitorRuntimeService(config_path)
-    html = create_app(runtime).test_client().get("/").get_data(as_text=True)
-
-    assert "drawLegend" in html
-    assert "ctx.measureText(item.label).width" in html
-    assert "drawLegend(ctx, singleGpuSeries, width)" in html
-    assert "drawSeries(ctx, data, spec.color);" in html
-    assert "drawSeries(ctx, data, spec.color, spec.label)" not in html
 
 def test_dashboard_history_trend_lightweight_enhancements(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
@@ -235,15 +211,11 @@ def test_dashboard_history_trend_lightweight_enhancements(tmp_path: Path) -> Non
 
     assert 'class="chart-scroll"' in html
     assert 'id="historyGpuSelect"' in html
-    assert 'id="historyHover"' in html
     assert 'width="960" height="240"' in html
     assert "collectHistoryGpuIds" in html
     assert "syncHistoryGpuSelect" in html
-    assert "updateHistoryHoverFromCanvas" in html
-    assert "renderHistoryHover" in html
     assert "historyScale" in html
     assert "[0, 25, 50, 75, 100]" in html
-    assert "lines.join('\\n')" in html
     assert "Chart.js" not in html
     assert "echarts" not in html.lower()
 

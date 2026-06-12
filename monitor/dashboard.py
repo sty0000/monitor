@@ -70,7 +70,6 @@ def _html_page() -> str:
 
 <div class="card wide-card" style="margin-top: 16px;">
   <h3>GPU Snapshot</h3>
-  <div class="muted">首屏只看 GPU 是否在工作、是否过热、是否有进程和当前告警；高级控制在下方折叠区。</div>
   <div class="table-wrap">
     <table>
       <thead><tr><th>GPU</th><th>Util %</th><th id="gpuMemHeader">Mem MB</th><th>Power W</th><th>Temp C</th><th>PIDs</th><th>Device Error</th><th>GPU Error Alert</th></tr></thead>
@@ -105,7 +104,6 @@ def _html_page() -> str:
   <div class="chart-scroll">
     <canvas id="historyChart" class="chart" width="960" height="240"></canvas>
   </div>
-  <pre id="historyHover" class="chart-tooltip">Hover a sample point to inspect timestamp, state and GPU metrics.</pre>
 </div>
 
 <details class="advanced">
@@ -212,7 +210,6 @@ function fmtEvents(events) {
 var historyGpuSelection = 'all';
 var latestHistory = { points: [], events: [] };
 var historyPointPositions = [];
-var historyHoverIndex = null;
 
 function formatTimeLabel(timestamp) {
   if (!timestamp) { return '-'; }
@@ -322,7 +319,6 @@ function drawHistory(history) {
   if (!points.length) {
     ctx.fillStyle = '#94a3b8';
     ctx.fillText('No history yet', left, 42);
-    document.getElementById('historyHover').textContent = 'No history yet.';
     return;
   }
 
@@ -381,65 +377,7 @@ function drawHistory(history) {
     drawLegend(ctx, singleGpuSeries, width);
   }
 
-  var hoverIndex = historyHoverIndex;
-  if (hoverIndex === null || hoverIndex === undefined || !points[hoverIndex]) {
-    hoverIndex = points.length - 1;
-  }
-  if (points[hoverIndex]) {
-    var hoverX = xForIndex(hoverIndex);
-    ctx.save();
-    ctx.strokeStyle = '#94a3b8';
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(hoverX, top);
-    ctx.lineTo(hoverX, bottom);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#f8fafc';
-    ctx.beginPath();
-    ctx.arc(hoverX, bottom, 4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
 }
-
-function renderHistoryHover(point) {
-  var lines = [];
-  lines.push('timestamp: ' + (point.timestamp || '-'));
-  lines.push('state: ' + (point.state || '-'));
-  lines.push('reason: ' + (point.reason || '-'));
-  (point.gpus || []).forEach(function (gpu) {
-    lines.push('GPU' + gpu.index + ': util=' + fmtValue(gpu.utilization_gpu) + '%, temp=' + fmtValue(gpu.temperature_c) + 'C, power=' + fmtValue(gpu.power_draw_w) + 'W, mem=' + fmtValue(gpu.memory_used_mb));
-  });
-  var errors = point.collector_errors || {};
-  if (Object.keys(errors).length) {
-    lines.push('collector_errors: ' + JSON.stringify(errors));
-  }
-  document.getElementById('historyHover').textContent = lines.join('\\n');
-}
-
-function updateHistoryHoverFromCanvas(event) {
-  if (!historyPointPositions.length) { return; }
-  var rect = event.target.getBoundingClientRect();
-  var scaleX = event.target.width / rect.width;
-  var x = (event.clientX - rect.left) * scaleX;
-  var nearest = historyPointPositions.reduce(function (best, item) {
-    var distance = Math.abs(item.x - x);
-    return !best || distance < best.distance ? { distance: distance, item: item } : best;
-  }, null);
-  if (nearest && nearest.item) {
-    historyHoverIndex = nearest.item.index;
-    renderHistoryHover(nearest.item.point);
-    drawHistory(latestHistory);
-  }
-}
-
-function clearHistoryHover() {
-  historyHoverIndex = null;
-  document.getElementById('historyHover').textContent = 'Hover a sample point to inspect timestamp, state and GPU metrics.';
-  drawHistory(latestHistory);
-}
-
 
 function renderTimeline(history) {
   var events = ((history && history.events) || []).filter(function (event) {
@@ -555,7 +493,7 @@ function render(status, health, history) {
   document.getElementById('routeState').textContent = (status.notifier_order_active || []).join(' -> ') || '(none)';
   document.getElementById('silenceState').textContent = 'Ack: ' + JSON.stringify(status.acknowledged_alerts || []) + '\\nTemp: ' + JSON.stringify(status.silenced_alerts_until || {}) + '\\nPermanent: ' + JSON.stringify(status.silenced_alerts_permanent || []);
 
-  var platformSummary = status.platform_summary || {};
+  var platformSummary = ((status.sample || {}).platform_summary) || status.platform_summary || {};
   var systemMemory = (status.sample && status.sample.system_memory) || {};
   var isUnifiedMemoryPlatform = platformSummary.profile === 'dgx_spark';
   var memoryLabel = isUnifiedMemoryPlatform ? 'GPU/Unified Mem MB' : 'Mem MB';
@@ -582,7 +520,7 @@ function render(status, health, history) {
     var errorText = gpu.device_error || '';
     var buttonText = muted ? 'Enable GPU error alert' : 'Mute GPU error alert';
     var button = '<button data-gpu-id="' + gpu.index + '" data-muted="' + muted + '" class="gpuMuteBtn">' + buttonText + '</button>';
-    return '<tr><td>' + gpu.index + '</td><td>' + fmtValue(gpu.utilization_gpu) + '</td><td>' + fmtValue(gpu.memory_used_mb) + '</td><td>' + fmtValue(gpu.power_draw_w) + '</td><td>' + fmtValue(gpu.temperature_c) + '</td><td>' + ((gpu.compute_pids || []).join(',')) + '</td><td class="' + (errorText ? 'bad' : 'ok') + '">' + (errorText || 'OK') + '</td><td>' + button + '</td></tr>';
+    return '<tr><td>' + gpu.index + '</td><td>' + fmtValue(gpu.utilization_gpu) + '</td><td>' + formatGpuMemory(gpu) + '</td><td>' + fmtValue(gpu.power_draw_w) + '</td><td>' + fmtValue(gpu.temperature_c) + '</td><td>' + ((gpu.compute_pids || []).join(',')) + '</td><td class="' + (errorText ? 'bad' : 'ok') + '">' + (errorText || 'OK') + '</td><td>' + button + '</td></tr>';
   }).join('');
   document.getElementById('gpuBody').innerHTML = rows || '<tr><td colspan="8">No data</td></tr>';
   var busyCount = gpus.filter(function (gpu) { return Number(gpu.utilization_gpu || 0) > 0; }).length;
@@ -640,9 +578,6 @@ document.getElementById('btnClearSilence').onclick = function () { runAction('Cl
 document.getElementById('sortCpu').onclick = function () { processSortKey = 'cpu'; refresh(); };
 document.getElementById('sortMem').onclick = function () { processSortKey = 'memory'; refresh(); };
 document.getElementById('historyGpuSelect').onchange = function () { historyGpuSelection = this.value; drawHistory(latestHistory); };
-var historyCanvas = document.getElementById('historyChart');
-historyCanvas.addEventListener('mousemove', updateHistoryHoverFromCanvas);
-historyCanvas.addEventListener('mouseleave', clearHistoryHover);
 document.getElementById('btnConfigPreview').onclick = previewConfigChange;
 document.getElementById('btnConfigApply').onclick = applyConfigChange;
 
