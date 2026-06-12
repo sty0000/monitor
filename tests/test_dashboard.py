@@ -189,6 +189,10 @@ def test_dashboard_alert_silence_api_and_buttons(tmp_path: Path) -> None:
     assert "btnSilenceToday" in html
     assert "btnSilencePermanent" in html
     assert "btnClearSilence" in html
+    assert "Control Result" in html
+    assert "Acknowledge Current Alert" in html
+    assert "Clear Ack/Silence" in html
+    assert "runAction('Silence current alert for 1h'" in html
 
     response = client.post("/api/alert-silence", json={"mode": "permanent"})
     assert response.status_code == 200

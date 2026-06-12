@@ -113,12 +113,13 @@ def _html_page() -> str:
     <button id="btnLowUsageDisable">Disable Low Usage Notify</button>
     <button id="btnTest">Send Test</button>
     <button id="btnReload">Reload Config</button>
-    <button id="btnAckAlert">Ack Current Alert</button>
-    <button id="btnSilenceAlert">Silence Current Alert 1h</button>
-    <button id="btnSilenceToday">Silence Today</button>
-    <button id="btnSilencePermanent">Silence Permanent</button>
-    <button id="btnClearSilence">Clear Silence</button>
+    <button id="btnAckAlert" title="Acknowledge current alert: stop repeating this active alert until it clears or is reset.">Acknowledge Current Alert</button>
+    <button id="btnSilenceAlert" title="Silence current alert for one hour.">Silence Current Alert 1h</button>
+    <button id="btnSilenceToday" title="Silence current alert until local end of day.">Silence Today</button>
+    <button id="btnSilencePermanent" title="Silence current alert until cleared manually.">Silence Permanent</button>
+    <button id="btnClearSilence" title="Clear acknowledge and silence state for current alert.">Clear Ack/Silence</button>
   </div>
+  <div class="card" style="margin-top: 16px;"><h3>Control Result</h3><pre id="controlResult">No action yet.</pre></div>
   <div class="card" style="margin-top: 16px;"><h3>Alert Timeline</h3><pre id="timelineBody">-</pre></div>
   <div class="card" style="margin-top: 16px;"><h3>Notifier Health</h3><pre id="notifierHealthBody">-</pre></div>
   <div class="card" style="margin-top: 16px;"><h3>Health</h3><pre id="healthBody">-</pre></div>
@@ -148,6 +149,23 @@ function buildHeaders() {
     headers.Authorization = 'Bearer ' + bearerToken;
   }
   return headers;
+}
+
+
+function setControlResult(message, payload) {
+  var detail = payload === undefined ? '' : '\n' + JSON.stringify(payload, null, 2);
+  document.getElementById('controlResult').textContent = message + detail;
+}
+
+function runAction(label, url, body) {
+  setControlResult(label + ' ...');
+  return api(url, 'POST', body || {}).then(function (payload) {
+    var ok = payload && payload.ok !== false;
+    setControlResult(label + (ok ? ' succeeded' : ' returned an error'), payload);
+    return refresh();
+  }).catch(function (err) {
+    setControlResult(label + ' failed: ' + err.message);
+  });
 }
 
 function api(url, method, body) {
@@ -413,17 +431,17 @@ document.getElementById('saveToken').onclick = function () {
   bearerToken = document.getElementById('token').value.trim();
   refresh();
 };
-document.getElementById('btnEnable').onclick = function () { api('/api/notify', 'POST', { enabled: true }).then(refresh); };
-document.getElementById('btnDisable').onclick = function () { api('/api/notify', 'POST', { enabled: false }).then(refresh); };
-document.getElementById('btnLowUsageEnable').onclick = function () { api('/api/low-usage-notify', 'POST', { enabled: true }).then(refresh); };
-document.getElementById('btnLowUsageDisable').onclick = function () { api('/api/low-usage-notify', 'POST', { enabled: false }).then(refresh); };
-document.getElementById('btnTest').onclick = function () { api('/api/test-notify', 'POST', {}).then(refresh); };
-document.getElementById('btnReload').onclick = function () { api('/api/reload-config', 'POST', {}).then(refresh); };
-document.getElementById('btnAckAlert').onclick = function () { api('/api/acknowledge-alert', 'POST', {}).then(refresh); };
-document.getElementById('btnSilenceAlert').onclick = function () { api('/api/alert-silence', 'POST', { mode: '1h' }).then(refresh); };
-document.getElementById('btnSilenceToday').onclick = function () { api('/api/alert-silence', 'POST', { mode: 'today' }).then(refresh); };
-document.getElementById('btnSilencePermanent').onclick = function () { api('/api/alert-silence', 'POST', { mode: 'permanent' }).then(refresh); };
-document.getElementById('btnClearSilence').onclick = function () { api('/api/alert-silence', 'POST', { mode: 'clear' }).then(refresh); };
+document.getElementById('btnEnable').onclick = function () { runAction('Enable notify', '/api/notify', { enabled: true }); };
+document.getElementById('btnDisable').onclick = function () { runAction('Disable notify', '/api/notify', { enabled: false }); };
+document.getElementById('btnLowUsageEnable').onclick = function () { runAction('Enable low usage notify', '/api/low-usage-notify', { enabled: true }); };
+document.getElementById('btnLowUsageDisable').onclick = function () { runAction('Disable low usage notify', '/api/low-usage-notify', { enabled: false }); };
+document.getElementById('btnTest').onclick = function () { runAction('Send test notification', '/api/test-notify', {}); };
+document.getElementById('btnReload').onclick = function () { runAction('Reload config', '/api/reload-config', {}); };
+document.getElementById('btnAckAlert').onclick = function () { runAction('Acknowledge current alert', '/api/acknowledge-alert', {}); };
+document.getElementById('btnSilenceAlert').onclick = function () { runAction('Silence current alert for 1h', '/api/alert-silence', { mode: '1h' }); };
+document.getElementById('btnSilenceToday').onclick = function () { runAction('Silence current alert for today', '/api/alert-silence', { mode: 'today' }); };
+document.getElementById('btnSilencePermanent').onclick = function () { runAction('Silence current alert permanently', '/api/alert-silence', { mode: 'permanent' }); };
+document.getElementById('btnClearSilence').onclick = function () { runAction('Clear acknowledge/silence', '/api/alert-silence', { mode: 'clear' }); };
 document.getElementById('sortCpu').onclick = function () { processSortKey = 'cpu'; refresh(); };
 document.getElementById('sortMem').onclick = function () { processSortKey = 'memory'; refresh(); };
 document.getElementById('btnConfigPreview').onclick = previewConfigChange;
