@@ -37,7 +37,10 @@ def _html_page() -> str:
     .bad { color: #ef4444; }
     pre { white-space: pre-wrap; word-break: break-word; }
     input { padding: 8px; min-width: 320px; margin-right: 8px; }
-    .chart { width: 100%; height: 180px; background: #020617; border: 1px solid #334155; border-radius: 8px; }
+    .chart-scroll { overflow-x: auto; padding-bottom: 6px; }
+    .chart { width: 960px; height: 240px; max-width: none; background: #020617; border: 1px solid #334155; border-radius: 8px; display: block; }
+    .chart-toolbar { margin: 8px 0; }
+    .chart-tooltip { min-height: 80px; background: #020617; border: 1px solid #334155; border-radius: 8px; padding: 8px; }
     .muted { color: #94a3b8; }
     @media (max-width: 720px) {
       body { margin: 12px; }
@@ -93,8 +96,16 @@ def _html_page() -> str:
 
 <div class="card wide-card" style="margin-top: 16px;">
   <h3>History Trend</h3>
-  <div class="muted">最近样本：GPU Util % / Temp C，告警见事件轴。</div>
-  <canvas id="historyChart" class="chart" width="900" height="180"></canvas>
+  <div class="muted" id="historyWindowLabel">最近样本：GPU Util % / Temp C，告警见事件轴。</div>
+  <div class="chart-toolbar">
+    <label for="historyGpuSelect">GPU:</label>
+    <select id="historyGpuSelect"><option value="all">All</option></select>
+    <span class="muted">固定尺寸图表；窄窗口可横向滚动。</span>
+  </div>
+  <div class="chart-scroll">
+    <canvas id="historyChart" class="chart" width="960" height="240"></canvas>
+  </div>
+  <pre id="historyHover" class="chart-tooltip">Hover a sample point to inspect timestamp, state and GPU metrics.</pre>
 </div>
 
 <details class="advanced">
@@ -198,62 +209,182 @@ function fmtEvents(events) {
 }
 
 
+var historyGpuSelection = 'all';
+var latestHistory = { points: [], events: [] };
+var historyPointPositions = [];
+
+function formatTimeLabel(timestamp) {
+  if (!timestamp) { return '-'; }
+  var date = new Date(timestamp);
+  if (isNaN(date.getTime())) { return String(timestamp); }
+  return date.toLocaleTimeString();
+}
+
+function collectHistoryGpuIds(points) {
+  var seen = {};
+  var ids = [];
+  points.forEach(function (point) {
+    (point.gpus || []).forEach(function (gpu) {
+      if (gpu.index === undefined || gpu.index === null) { return; }
+      var key = String(gpu.index);
+      if (!seen[key]) {
+        seen[key] = true;
+        ids.push(gpu.index);
+      }
+    });
+  });
+  return ids.sort(function (a, b) { return Number(a) - Number(b); });
+}
+
+function syncHistoryGpuSelect(points) {
+  var select = document.getElementById('historyGpuSelect');
+  if (!select) { return; }
+  var gpuIds = collectHistoryGpuIds(points);
+  var previous = historyGpuSelection || select.value || 'all';
+  var options = ['<option value="all">All</option>'].concat(gpuIds.map(function (gpuId) {
+    return '<option value="' + gpuId + '">GPU' + gpuId + '</option>';
+  }));
+  select.innerHTML = options.join('');
+  var values = ['all'].concat(gpuIds.map(String));
+  historyGpuSelection = values.indexOf(String(previous)) >= 0 ? String(previous) : 'all';
+  select.value = historyGpuSelection;
+}
+
+function gpuAtPoint(point, gpuIndex) {
+  return ((point.gpus || []).filter(function (item) { return String(item.index) === String(gpuIndex); })[0]) || null;
+}
+
+function drawSeries(ctx, data, color, label) {
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  var started = false;
+  data.forEach(function (point) {
+    if (!point) { return; }
+    if (!started) { ctx.moveTo(point.x, point.y); started = true; }
+    else { ctx.lineTo(point.x, point.y); }
+  });
+  if (started) { ctx.stroke(); }
+  data.forEach(function (point) {
+    if (!point) { return; }
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  if (label) { ctx.fillText(label, data.filter(Boolean)[0]?.x || 56, 18); }
+}
+
+function historyScale(value, top, bottom) {
+  return bottom - Math.max(0, Math.min(100, Number(value))) / 100 * (bottom - top);
+}
+
 function drawHistory(history) {
+  latestHistory = history || { points: [], events: [] };
   var canvas = document.getElementById('historyChart');
   if (!canvas) { return; }
   var ctx = canvas.getContext('2d');
   var width = canvas.width;
   var height = canvas.height;
+  var left = 48;
+  var right = width - 16;
+  var top = 22;
+  var bottom = height - 34;
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = '#020617';
   ctx.fillRect(0, 0, width, height);
   var points = (history && history.points) || [];
+  syncHistoryGpuSelect(points);
+  historyPointPositions = [];
+  var windowLabel = document.getElementById('historyWindowLabel');
+  if (windowLabel) {
+    windowLabel.textContent = points.length ? ('Showing last ' + points.length + ' samples, ' + formatTimeLabel(points[0].timestamp) + ' - ' + formatTimeLabel(points[points.length - 1].timestamp)) : 'No history samples yet.';
+  }
   if (!points.length) {
     ctx.fillStyle = '#94a3b8';
-    ctx.fillText('No history yet', 16, 24);
+    ctx.fillText('No history yet', left, 42);
+    document.getElementById('historyHover').textContent = 'No history yet.';
     return;
   }
+
   ctx.strokeStyle = '#334155';
+  ctx.fillStyle = '#94a3b8';
   ctx.lineWidth = 1;
-  [0.25, 0.5, 0.75].forEach(function (ratio) {
-    var y = height * ratio;
+  [0, 25, 50, 75, 100].forEach(function (tick) {
+    var y = historyScale(tick, top, bottom);
     ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(width, y);
+    ctx.moveTo(left, y);
+    ctx.lineTo(right, y);
     ctx.stroke();
+    ctx.fillText(String(tick), 12, y + 4);
   });
-  function series(gpuIndex, key) {
-    return points.map(function (point, i) {
-      var gpu = ((point.gpus || []).filter(function (item) { return item.index === gpuIndex; })[0]) || {};
-      var value = gpu[key];
-      if (value === null || value === undefined) { return null; }
-      return { x: points.length === 1 ? 0 : (i / (points.length - 1)) * width, y: height - Math.max(0, Math.min(100, Number(value))) / 100 * height };
+  [0, 0.5, 1].forEach(function (ratio) {
+    var x = left + ratio * (right - left);
+    var index = Math.round(ratio * (points.length - 1));
+    ctx.fillText(formatTimeLabel(points[index].timestamp), Math.max(left, x - 34), height - 10);
+  });
+
+  function xForIndex(i) {
+    return points.length === 1 ? left : left + (i / (points.length - 1)) * (right - left);
+  }
+  historyPointPositions = points.map(function (point, i) { return { x: xForIndex(i), point: point, index: i }; });
+  var gpuIds = collectHistoryGpuIds(points);
+  var colors = ['#38bdf8', '#a78bfa', '#22c55e', '#f59e0b', '#ec4899', '#14b8a6', '#f97316', '#eab308'];
+  var selection = historyGpuSelection || 'all';
+  if (selection === 'all') {
+    gpuIds.forEach(function (gpuId, colorIndex) {
+      var data = points.map(function (point, i) {
+        var gpu = gpuAtPoint(point, gpuId);
+        var value = gpu && gpu.utilization_gpu;
+        if (value === null || value === undefined) { return null; }
+        return { x: xForIndex(i), y: historyScale(value, top, bottom) };
+      });
+      drawSeries(ctx, data, colors[colorIndex % colors.length], 'GPU' + gpuId + ' util');
+    });
+  } else {
+    [
+      { key: 'utilization_gpu', color: '#38bdf8', label: 'GPU' + selection + ' Util %' },
+      { key: 'temperature_c', color: '#f97316', label: 'GPU' + selection + ' Temp C' },
+      { key: 'power_draw_w', color: '#22c55e', label: 'GPU' + selection + ' Power W' },
+    ].forEach(function (spec) {
+      var data = points.map(function (point, i) {
+        var gpu = gpuAtPoint(point, selection);
+        var value = gpu && gpu[spec.key];
+        if (value === null || value === undefined) { return null; }
+        return { x: xForIndex(i), y: historyScale(value, top, bottom) };
+      });
+      drawSeries(ctx, data, spec.color, spec.label);
     });
   }
-  var firstGpu = (((points[points.length - 1] || {}).gpus || [])[0] || {}).index;
-  if (firstGpu === undefined) {
-    return;
-  }
-  [
-    { key: 'utilization_gpu', color: '#38bdf8', label: 'Util %' },
-    { key: 'temperature_c', color: '#f97316', label: 'Temp C' },
-  ].forEach(function (spec) {
-    var data = series(firstGpu, spec.key);
-    ctx.strokeStyle = spec.color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    var started = false;
-    data.forEach(function (point) {
-      if (!point) { return; }
-      if (!started) { ctx.moveTo(point.x, point.y); started = true; }
-      else { ctx.lineTo(point.x, point.y); }
-    });
-    if (started) { ctx.stroke(); }
+}
+
+function renderHistoryHover(point) {
+  var lines = [];
+  lines.push('timestamp: ' + (point.timestamp || '-'));
+  lines.push('state: ' + (point.state || '-'));
+  lines.push('reason: ' + (point.reason || '-'));
+  (point.gpus || []).forEach(function (gpu) {
+    lines.push('GPU' + gpu.index + ': util=' + fmtValue(gpu.utilization_gpu) + '%, temp=' + fmtValue(gpu.temperature_c) + 'C, power=' + fmtValue(gpu.power_draw_w) + 'W, mem=' + fmtValue(gpu.memory_used_mb));
   });
-  ctx.fillStyle = '#38bdf8';
-  ctx.fillText('Util %', 12, 18);
-  ctx.fillStyle = '#f97316';
-  ctx.fillText('Temp C', 72, 18);
+  var errors = point.collector_errors || {};
+  if (Object.keys(errors).length) {
+    lines.push('collector_errors: ' + JSON.stringify(errors));
+  }
+  document.getElementById('historyHover').textContent = lines.join('\\n');
+}
+
+function handleHistoryMouseMove(event) {
+  if (!historyPointPositions.length) { return; }
+  var rect = event.target.getBoundingClientRect();
+  var scaleX = event.target.width / rect.width;
+  var x = (event.clientX - rect.left) * scaleX;
+  var nearest = historyPointPositions.reduce(function (best, item) {
+    var distance = Math.abs(item.x - x);
+    return !best || distance < best.distance ? { distance: distance, item: item } : best;
+  }, null);
+  if (nearest && nearest.item) {
+    renderHistoryHover(nearest.item.point);
+  }
 }
 
 function renderTimeline(history) {
@@ -454,6 +585,8 @@ document.getElementById('btnSilencePermanent').onclick = function () { runAction
 document.getElementById('btnClearSilence').onclick = function () { runAction('Clear acknowledge/silence', '/api/alert-silence', { mode: 'clear' }); };
 document.getElementById('sortCpu').onclick = function () { processSortKey = 'cpu'; refresh(); };
 document.getElementById('sortMem').onclick = function () { processSortKey = 'memory'; refresh(); };
+document.getElementById('historyGpuSelect').onchange = function () { historyGpuSelection = this.value; drawHistory(latestHistory); };
+document.getElementById('historyChart').onmousemove = handleHistoryMouseMove;
 document.getElementById('btnConfigPreview').onclick = previewConfigChange;
 document.getElementById('btnConfigApply').onclick = applyConfigChange;
 

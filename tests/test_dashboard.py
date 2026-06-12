@@ -196,6 +196,28 @@ def test_dashboard_first_screen_prioritizes_status_and_readonly_tables(tmp_path:
     assert 'id="configEditorCard"' in html
 
 
+
+
+def test_dashboard_history_trend_lightweight_enhancements(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    runtime = MonitorRuntimeService(config_path)
+    html = create_app(runtime).test_client().get("/").get_data(as_text=True)
+
+    assert 'class="chart-scroll"' in html
+    assert 'id="historyGpuSelect"' in html
+    assert 'id="historyHover"' in html
+    assert 'width="960" height="240"' in html
+    assert "collectHistoryGpuIds" in html
+    assert "syncHistoryGpuSelect" in html
+    assert "handleHistoryMouseMove" in html
+    assert "renderHistoryHover" in html
+    assert "historyScale" in html
+    assert "[0, 25, 50, 75, 100]" in html
+    assert "lines.join('\\n')" in html
+    assert "Chart.js" not in html
+    assert "echarts" not in html.lower()
+
 def test_dashboard_exposes_history_api_and_chart(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     _write_config(config_path)
