@@ -105,6 +105,20 @@ def test_dashboard_contains_dgx_spark_cards(tmp_path: Path) -> None:
     assert "@media (max-width: 720px)" in html
 
 
+
+
+def test_dashboard_inline_script_escapes_newlines(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    runtime = MonitorRuntimeService(config_path)
+    html = create_app(runtime).test_client().get("/").get_data(as_text=True)
+
+    assert "join('\\n')" in html
+    assert "validation:\\n" in html
+    assert "Apply result:\\n" in html
+    assert "rolled_back=true.\\n" in html
+    assert "Ack: " in html and "\\nTemp: " in html and "\\nPermanent: " in html
+
 def test_dashboard_first_screen_prioritizes_status_and_readonly_tables(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     _write_config(config_path)

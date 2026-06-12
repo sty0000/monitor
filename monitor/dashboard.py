@@ -244,7 +244,7 @@ function renderTimeline(history) {
   }).slice(0, 20);
   document.getElementById('timelineBody').textContent = events.map(function (event) {
     return '[' + event.ts + '] ' + event.kind + ': ' + event.message;
-  }).join('\n') || '-';
+  }).join('\\n') || '-';
 }
 
 function parseConfigValue(raw, typeName) {
@@ -308,9 +308,9 @@ function previewConfigChange() {
   api('/api/config/preview', 'POST', { updates: updates }).then(function (payload) {
     lastConfigPreviewOk = !!payload.ok;
     document.getElementById('btnConfigApply').disabled = !lastConfigPreviewOk;
-    document.getElementById('configPreviewBody').textContent = JSON.stringify(payload.changes || [], null, 2) + '\n\nvalidation:\n' + JSON.stringify(payload.validation || {}, null, 2) + '\n\ndiff:\n' + (payload.diff || '');
+    document.getElementById('configPreviewBody').textContent = JSON.stringify(payload.changes || [], null, 2) + '\\n\\nvalidation:\\n' + JSON.stringify(payload.validation || {}, null, 2) + '\\n\\ndiff:\\n' + (payload.diff || '');
   }).catch(function (err) {
-    document.getElementById('configPreviewBody').textContent = 'Preview failed; apply is disabled.\n' + err.message;
+    document.getElementById('configPreviewBody').textContent = 'Preview failed; apply is disabled.\\n' + err.message;
   });
 }
 
@@ -325,12 +325,12 @@ function applyConfigChange() {
   api('/api/config/apply', 'POST', { updates: collectConfigUpdates() }).then(function (payload) {
     lastConfigPreviewOk = false;
     document.getElementById('btnConfigApply').disabled = true;
-    document.getElementById('configPreviewBody').textContent = 'Apply result:\n' + JSON.stringify(payload, null, 2) + '\n\nbackup_path: ' + (payload.backup_path || '-');
+    document.getElementById('configPreviewBody').textContent = 'Apply result:\\n' + JSON.stringify(payload, null, 2) + '\\n\\nbackup_path: ' + (payload.backup_path || '-');
     return refresh();
   }).catch(function (err) {
     lastConfigPreviewOk = false;
     document.getElementById('btnConfigApply').disabled = true;
-    document.getElementById('configPreviewBody').textContent = 'Apply failed. If reload failed, backend reports rolled_back=true.\n' + err.message;
+    document.getElementById('configPreviewBody').textContent = 'Apply failed. If reload failed, backend reports rolled_back=true.\\n' + err.message;
   });
 }
 
@@ -350,7 +350,7 @@ function render(status, health, history) {
   document.getElementById('lowUsageNotifyState').innerHTML = 'Low usage: ' + (status.low_usage_notify_enabled ? '<span class="ok">ON</span>' : '<span class="warn">OFF</span>');
   document.getElementById('intervalState').textContent = status.interval_seconds + 's / cooldown ' + status.cooldown_minutes + 'm / global ' + status.min_interval_minutes + 'm';
   document.getElementById('routeState').textContent = (status.notifier_order_active || []).join(' -> ') || '(none)';
-  document.getElementById('silenceState').textContent = 'Ack: ' + JSON.stringify(status.acknowledged_alerts || []) + '\nTemp: ' + JSON.stringify(status.silenced_alerts_until || {}) + '\nPermanent: ' + JSON.stringify(status.silenced_alerts_permanent || []);
+  document.getElementById('silenceState').textContent = 'Ack: ' + JSON.stringify(status.acknowledged_alerts || []) + '\\nTemp: ' + JSON.stringify(status.silenced_alerts_until || {}) + '\\nPermanent: ' + JSON.stringify(status.silenced_alerts_permanent || []);
 
   var platformSummary = status.platform_summary || {};
   var systemMemory = (status.sample && status.sample.system_memory) || {};
