@@ -212,6 +212,7 @@ function fmtEvents(events) {
 var historyGpuSelection = 'all';
 var latestHistory = { points: [], events: [] };
 var historyPointPositions = [];
+var historyHoverIndex = null;
 
 function formatTimeLabel(timestamp) {
   if (!timestamp) { return '-'; }
@@ -379,6 +380,27 @@ function drawHistory(history) {
     });
     drawLegend(ctx, singleGpuSeries, width);
   }
+
+  var hoverIndex = historyHoverIndex;
+  if (hoverIndex === null || hoverIndex === undefined || !points[hoverIndex]) {
+    hoverIndex = points.length - 1;
+  }
+  if (points[hoverIndex]) {
+    var hoverX = xForIndex(hoverIndex);
+    ctx.save();
+    ctx.strokeStyle = '#94a3b8';
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(hoverX, top);
+    ctx.lineTo(hoverX, bottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#f8fafc';
+    ctx.beginPath();
+    ctx.arc(hoverX, bottom, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 function renderHistoryHover(point) {
@@ -396,7 +418,7 @@ function renderHistoryHover(point) {
   document.getElementById('historyHover').textContent = lines.join('\\n');
 }
 
-function handleHistoryMouseMove(event) {
+function updateHistoryHoverFromCanvas(event) {
   if (!historyPointPositions.length) { return; }
   var rect = event.target.getBoundingClientRect();
   var scaleX = event.target.width / rect.width;
@@ -406,9 +428,18 @@ function handleHistoryMouseMove(event) {
     return !best || distance < best.distance ? { distance: distance, item: item } : best;
   }, null);
   if (nearest && nearest.item) {
+    historyHoverIndex = nearest.item.index;
     renderHistoryHover(nearest.item.point);
+    drawHistory(latestHistory);
   }
 }
+
+function clearHistoryHover() {
+  historyHoverIndex = null;
+  document.getElementById('historyHover').textContent = 'Hover a sample point to inspect timestamp, state and GPU metrics.';
+  drawHistory(latestHistory);
+}
+
 
 function renderTimeline(history) {
   var events = ((history && history.events) || []).filter(function (event) {
@@ -609,7 +640,9 @@ document.getElementById('btnClearSilence').onclick = function () { runAction('Cl
 document.getElementById('sortCpu').onclick = function () { processSortKey = 'cpu'; refresh(); };
 document.getElementById('sortMem').onclick = function () { processSortKey = 'memory'; refresh(); };
 document.getElementById('historyGpuSelect').onchange = function () { historyGpuSelection = this.value; drawHistory(latestHistory); };
-document.getElementById('historyChart').onmousemove = handleHistoryMouseMove;
+var historyCanvas = document.getElementById('historyChart');
+historyCanvas.addEventListener('mousemove', updateHistoryHoverFromCanvas);
+historyCanvas.addEventListener('mouseleave', clearHistoryHover);
 document.getElementById('btnConfigPreview').onclick = previewConfigChange;
 document.getElementById('btnConfigApply').onclick = applyConfigChange;
 

@@ -200,6 +200,21 @@ def test_dashboard_first_screen_prioritizes_status_and_readonly_tables(tmp_path:
 
 
 
+
+
+def test_dashboard_history_hover_repaints_visible_marker(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    runtime = MonitorRuntimeService(config_path)
+    html = create_app(runtime).test_client().get("/").get_data(as_text=True)
+
+    assert "historyHoverIndex" in html
+    assert "updateHistoryHoverFromCanvas" in html
+    assert "clearHistoryHover" in html
+    assert "setLineDash([4, 4])" in html
+    assert "addEventListener('mousemove', updateHistoryHoverFromCanvas)" in html
+    assert "addEventListener('mouseleave', clearHistoryHover)" in html
+
 def test_dashboard_history_trend_legend_is_separated(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     _write_config(config_path)
@@ -224,7 +239,7 @@ def test_dashboard_history_trend_lightweight_enhancements(tmp_path: Path) -> Non
     assert 'width="960" height="240"' in html
     assert "collectHistoryGpuIds" in html
     assert "syncHistoryGpuSelect" in html
-    assert "handleHistoryMouseMove" in html
+    assert "updateHistoryHoverFromCanvas" in html
     assert "renderHistoryHover" in html
     assert "historyScale" in html
     assert "[0, 25, 50, 75, 100]" in html
