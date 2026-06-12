@@ -198,6 +198,20 @@ def test_dashboard_first_screen_prioritizes_status_and_readonly_tables(tmp_path:
 
 
 
+
+
+def test_dashboard_history_trend_legend_is_separated(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    runtime = MonitorRuntimeService(config_path)
+    html = create_app(runtime).test_client().get("/").get_data(as_text=True)
+
+    assert "drawLegend" in html
+    assert "ctx.measureText(item.label).width" in html
+    assert "drawLegend(ctx, singleGpuSeries, width)" in html
+    assert "drawSeries(ctx, data, spec.color);" in html
+    assert "drawSeries(ctx, data, spec.color, spec.label)" not in html
+
 def test_dashboard_history_trend_lightweight_enhancements(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     _write_config(config_path)

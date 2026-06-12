@@ -254,7 +254,7 @@ function gpuAtPoint(point, gpuIndex) {
   return ((point.gpus || []).filter(function (item) { return String(item.index) === String(gpuIndex); })[0]) || null;
 }
 
-function drawSeries(ctx, data, color, label) {
+function drawSeries(ctx, data, color) {
   ctx.strokeStyle = color;
   ctx.fillStyle = color;
   ctx.lineWidth = 2;
@@ -272,7 +272,25 @@ function drawSeries(ctx, data, color, label) {
     ctx.arc(point.x, point.y, 2.5, 0, Math.PI * 2);
     ctx.fill();
   });
-  if (label) { ctx.fillText(label, data.filter(Boolean)[0]?.x || 56, 18); }
+}
+
+function drawLegend(ctx, items, width) {
+  var x = width - 12;
+  var y = 18;
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  items.forEach(function (item) {
+    var textWidth = ctx.measureText(item.label).width;
+    var boxX = x - textWidth - 22;
+    ctx.fillStyle = item.color;
+    ctx.fillRect(boxX, y - 5, 10, 10);
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillText(item.label, x, y);
+    y += 18;
+  });
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
 }
 
 function historyScale(value, top, bottom) {
@@ -339,22 +357,27 @@ function drawHistory(history) {
         if (value === null || value === undefined) { return null; }
         return { x: xForIndex(i), y: historyScale(value, top, bottom) };
       });
-      drawSeries(ctx, data, colors[colorIndex % colors.length], 'GPU' + gpuId + ' util');
+      drawSeries(ctx, data, colors[colorIndex % colors.length]);
     });
+    drawLegend(ctx, gpuIds.map(function (gpuId, colorIndex) {
+      return { color: colors[colorIndex % colors.length], label: 'GPU' + gpuId + ' util' };
+    }), width);
   } else {
-    [
+    var singleGpuSeries = [
       { key: 'utilization_gpu', color: '#38bdf8', label: 'GPU' + selection + ' Util %' },
       { key: 'temperature_c', color: '#f97316', label: 'GPU' + selection + ' Temp C' },
       { key: 'power_draw_w', color: '#22c55e', label: 'GPU' + selection + ' Power W' },
-    ].forEach(function (spec) {
+    ];
+    singleGpuSeries.forEach(function (spec) {
       var data = points.map(function (point, i) {
         var gpu = gpuAtPoint(point, selection);
         var value = gpu && gpu[spec.key];
         if (value === null || value === undefined) { return null; }
         return { x: xForIndex(i), y: historyScale(value, top, bottom) };
       });
-      drawSeries(ctx, data, spec.color, spec.label);
+      drawSeries(ctx, data, spec.color);
     });
+    drawLegend(ctx, singleGpuSeries, width);
   }
 }
 
