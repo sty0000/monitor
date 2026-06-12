@@ -372,7 +372,8 @@ function render(status, health, history) {
 
   var platformSummary = status.platform_summary || {};
   var systemMemory = (status.sample && status.sample.system_memory) || {};
-  var memoryLabel = platformSummary.profile === 'dgx_spark' ? 'GPU/Unified Mem MB' : 'Mem MB';
+  var isUnifiedMemoryPlatform = platformSummary.profile === 'dgx_spark';
+  var memoryLabel = isUnifiedMemoryPlatform ? 'GPU/Unified Mem MB' : 'Mem MB';
   document.getElementById('gpuMemHeader').textContent = memoryLabel;
   document.getElementById('platformBody').textContent = JSON.stringify(platformSummary, null, 2);
   document.getElementById('memoryBody').innerHTML = systemMemory.ok ? ('used ' + systemMemory.used_mb + 'MB / total ' + systemMemory.total_mb + 'MB (' + systemMemory.used_percent + '%), available ' + systemMemory.available_mb + 'MB') : (systemMemory.error || 'N/A');
@@ -381,6 +382,15 @@ function render(status, health, history) {
   var gpus = (status.sample && status.sample.gpus) || [];
   function fmtValue(value) {
     return value === null || value === undefined ? 'N/A' : value;
+  }
+  function formatGpuMemory(gpu) {
+    if (gpu.memory_used_mb !== null && gpu.memory_used_mb !== undefined) {
+      return fmtValue(gpu.memory_used_mb);
+    }
+    if (isUnifiedMemoryPlatform && systemMemory.ok) {
+      return systemMemory.used_mb + ' / ' + systemMemory.total_mb + ' unified';
+    }
+    return 'N/A';
   }
   var rows = gpus.map(function (gpu) {
     var muted = mutedGpuIds.indexOf(gpu.index) >= 0;

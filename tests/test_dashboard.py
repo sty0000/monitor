@@ -107,6 +107,62 @@ def test_dashboard_contains_dgx_spark_cards(tmp_path: Path) -> None:
 
 
 
+
+
+def test_dashboard_uses_unified_memory_fallback_for_dgx_spark(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    runtime = MonitorRuntimeService(config_path)
+    runtime.get_status = lambda: {
+        "config_summary": {"monitor": {"instance_name": "test"}},
+        "version": "test",
+        "monitor_state": "ACTIVE",
+        "active_alert": "",
+        "reason": "ok",
+        "notify_enabled": False,
+        "low_usage_notify_enabled": False,
+        "interval_seconds": 15,
+        "cooldown_minutes": 30,
+        "min_interval_minutes": 3,
+        "notifier_order_active": [],
+        "acknowledged_alerts": [],
+        "silenced_alerts_until": {},
+        "silenced_alerts_permanent": [],
+        "muted_gpu_error_ids": [],
+        "notifier_health": {},
+        "events": [],
+        "sample": {
+            "platform_summary": {"profile": "dgx_spark"},
+            "system_memory": {
+                "ok": True,
+                "used_mb": 5941.1,
+                "total_mb": 124545.9,
+                "used_percent": 4.8,
+                "available_mb": 118604.8,
+            },
+            "gpus": [
+                {
+                    "index": 0,
+                    "utilization_gpu": 0,
+                    "memory_used_mb": None,
+                    "power_draw_w": 5.28,
+                    "temperature_c": 40,
+                    "compute_pids": [],
+                    "device_error": None,
+                }
+            ],
+            "process_usage": {"ok": True, "top_cpu": [], "top_memory": []},
+        },
+    }
+    runtime.get_history = lambda **kwargs: {"points": [], "events": []}
+    app = create_app(runtime)
+    html = app.test_client().get("/").get_data(as_text=True)
+
+    assert "GPU/Unified Mem MB" in html
+    assert "formatGpuMemory(gpu)" in html
+    assert "systemMemory.used_mb + ' / ' + systemMemory.total_mb + ' unified'" in html
+    assert "return fmtValue(gpu.memory_used_mb);" in html
+
 def test_dashboard_inline_script_escapes_newlines(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     _write_config(config_path)
